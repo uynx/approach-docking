@@ -4,8 +4,8 @@ Two players dock spacecraft at separate ports on a station. Each player joins
 from a browser using a room code. The game includes solo practice and an in-game
 guide. Desktop keyboard controls come first; touch controls are not implemented.
 
-Ships start 25 metres from their ports. Thrust and rotation persist until the
-pilot counters them. A successful dock beats a failed attempt. Successful docks
+Ships start 25 metres from their ports. Ships keep coasting and turning after
+the pilot releases the controls. Opposite thrust slows them down. A successful dock beats a failed attempt. Successful docks
 score up to 1,000 points for precision, remaining fuel, and remaining time.
 
 ## Run locally
