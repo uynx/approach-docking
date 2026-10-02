@@ -59,5 +59,7 @@ test('two browser sessions join a room and share a countdown and flight', async 
   await one.reload();
   await expect(one.locator('#mode')).toHaveText('FLIGHT');
   await expect(one.locator('#opponent-name')).toHaveText('Bob');
+  await one.getByRole('button', { name: 'Leave flight' }).click();
+  await expect(two.locator('#opponent-status')).toHaveText('Approach failed');
   await a.close(); await b.close();
 });

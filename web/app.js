@@ -66,7 +66,10 @@ function stateReceived(message) {
   $('mode').textContent = message.phase.toUpperCase();
   $('opponent-name').textContent = opponent.name || 'Waiting for a second pilot';
   $('opponent-range').textContent = opponent.name ? Math.hypot(...opponent.state.slice(0, 3)).toFixed(1) : '—';
-  $('opponent-status').textContent = opponent.name ? (!opponent.connected ? 'Disconnected. Waiting for reconnection.' : message.phase === 'lobby' ? (opponent.ready ? 'Ready' : 'Not ready yet') : statusText[opponent.state[15]]) : 'Share the room link to invite a friend.';
+  $('opponent-status').textContent = !opponent.name ? 'Share the room link to invite a friend.'
+    : opponent.state[15] ? statusText[opponent.state[15]]
+    : !opponent.connected ? 'Disconnected. Waiting for reconnection.'
+    : message.phase === 'lobby' ? (opponent.ready ? 'Ready' : 'Not ready yet') : statusText[0];
   $('ready').disabled = mine.ready || message.phase === 'countdown' || message.phase === 'flight';
   $('ready').textContent = mine.ready ? 'Waiting for the other pilot' : message.phase === 'finished' ? 'Ready for rematch' : 'Ready to fly';
   $('announcement').textContent = message.phase === 'countdown' ? `T − ${Math.ceil(message.countdown)}` : message.phase === 'lobby' ? 'Awaiting both pilots' : '';
