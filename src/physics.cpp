@@ -20,7 +20,7 @@ Vec rotate(Quat q, Vec a) {
 double mean_motion() { return __builtin_sqrt(earth_mu/(orbit_radius*orbit_radius*orbit_radius)); }
 State initial() {
     State s;
-    s.position={0,0,-150};
+    s.position={0,0,-25};
     s.omega={mean_motion(),0,0};
     return s;
 }

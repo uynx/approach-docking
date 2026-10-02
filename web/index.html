@@ -12,13 +12,13 @@
   <div class="vignette"></div>
   <header>
     <a class="brand" href="/" aria-label="Approach home"><span class="brand-mark">⌁</span> APPROACH<span class="brand-sub">SPACECRAFT DOCKING</span></a>
-    <div class="header-right"><span id="connection">INITIALIZING</span><button id="help-button" class="quiet">Flight manual <kbd>H</kbd></button></div>
+    <div class="header-right"><span id="connection">LOADING</span><button id="help-button" class="quiet">How to play <kbd>H</kbd></button></div>
   </header>
   <main>
     <section id="welcome" class="welcome">
       <div class="eyebrow"><span class="live-dot"></span> LOW EARTH ORBIT · 400 KM</div>
       <h1>Dock a<br>spacecraft.</h1>
-      <p class="intro">Start 150 metres from the station. Control your thrust<br>and rotation to dock safely. Compare scores with a friend.</p>
+      <p class="intro">Dock at the glowing cross, 25 metres ahead.<br>Practice first, then compete with a friend.</p>
       <div class="entry-card">
         <label for="callsign">Callsign</label>
         <input id="callsign" maxlength="20" value="Pilot" autocomplete="nickname" spellcheck="false">
@@ -32,16 +32,20 @@
     </section>
     <aside id="station-label" class="station-label"><span class="eyebrow">TARGET / 01</span><strong>KEPLER STATION</strong><span>Two independent approach corridors</span></aside>
     <section id="flight-ui" hidden>
-      <div class="flight-top"><span class="eyebrow" id="mode">LOBBY</span><span id="camera-mode">CHASE CAM</span><span id="clock">00:00 / 15:00</span></div>
+      <div class="flight-top"><span class="eyebrow" id="mode">LOBBY</span><span id="camera-mode">DOCKING CAM</span><span id="clock">00:00 / 15:00</span></div>
       <aside class="telemetry panel">
         <div class="panel-title">FLIGHT INSTRUMENTS <span>RELATIVE TO PORT</span></div>
-        <div class="metric major"><span>PORT RANGE</span><strong id="range">150.00</strong><small>m</small></div>
+        <div class="metric major"><span>DISTANCE TO PORT</span><strong id="range">25.00</strong><small>m</small></div>
         <div class="metric"><span>CLOSING SPEED</span><strong id="closing">0.000</strong><small>m/s</small></div>
-        <div class="metric"><span>LATERAL OFFSET</span><strong id="offset">0.000</strong><small>m</small></div>
+        <div class="metric"><span>OFF CENTRE</span><strong id="offset">0.000</strong><small>m</small></div>
+        <div class="metric"><span>SIDEWAYS SPEED</span><strong id="drift">0.000</strong><small>m/s</small></div>
+        <details class="flight-details"><summary>Rotation and fuel</summary>
         <div class="metric"><span>ALIGNMENT ERROR</span><strong id="alignment">0.00</strong><small>deg</small></div>
         <div class="metric"><span>ROTATION RATE</span><strong id="spin">0.00</strong><small>deg/s</small></div>
         <div class="metric"><span>PROPELLANT</span><strong id="fuel">80.00</strong><small>kg</small></div>
         <meter id="fuel-bar" min="0" max="80" value="80" aria-label="Propellant remaining"></meter>
+        </details>
+        <p class="small">Dock below 0.15 m/s.<br>Sideways speed below 0.05 m/s.</p>
         <div id="thrust-mode" class="panel-foot">FULL THRUST · HOLD SHIFT FOR FINE</div>
       </aside>
       <aside class="session panel">
@@ -56,8 +60,8 @@
       <div class="reticle" aria-hidden="true"><span></span><i></i></div>
       <div id="announcement" class="announcement" role="status"></div>
       <div class="flight-bottom">
-        <div class="control-strip"><span><kbd>W</kbd><kbd>S</kbd> THRUST / BRAKE</span><span><kbd>A</kbd><kbd>D</kbd><kbd>R</kbd><kbd>F</kbd> TRANSLATE</span><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> AIM</span><span><kbd>Q</kbd><kbd>E</kbd> ROLL</span></div>
-        <div class="bottom-actions"><span id="guidance">Accelerate gently. Reverse thrust to stop.</span><button id="camera" class="quiet" aria-label="Camera">Camera <kbd>C</kbd></button><button id="reset-practice" class="quiet" hidden>Reset practice</button></div>
+        <div class="control-strip"><span><kbd>W</kbd> FORWARD <kbd>S</kbd> BACKWARD</span><span><kbd>A</kbd><kbd>D</kbd> LEFT / RIGHT</span><span><kbd>R</kbd><kbd>F</kbd> UP / DOWN</span><span>ARROWS TURN · <kbd>Q</kbd><kbd>E</kbd> ROLL</span></div>
+        <div class="bottom-actions"><span id="guidance">Hold W briefly to start moving. Use S to slow down.</span><button id="camera" class="quiet" aria-label="Camera">Camera <kbd>C</kbd></button><button id="reset-practice" class="quiet" hidden>Reset practice</button></div>
       </div>
     </section>
     <section id="results" class="result-card panel" hidden>
@@ -71,7 +75,9 @@
   <dialog id="manual">
     <button id="close-manual" class="close" aria-label="Close manual">×</button>
     <div class="eyebrow">FLIGHT MANUAL</div><h2>How to play</h2>
-    <p>Start 150 metres from your own port. Both pilots get the same ship and initial conditions. Ready up together and dock within 15 minutes. Ships do not collide with each other.</p>
+    <ol><li>Choose Practice flight to learn the controls, or create a room and send its invite link to a friend.</li><li>In a room, both players press Ready to fly. Each ship starts 25 metres from its own port, already lined up.</li><li>Reach the glowing cross slowly. A successful dock beats a failed approach. If both players dock, the higher score wins. You have 15 minutes.</li></ol>
+    <h3>Try W, then S</h3>
+    <p>Hold W for one second, then release it. The ship keeps moving. Hold S until the closing speed is near zero, then release it. Holding S longer makes you move away from the station.</p>
     <h3>Your ship keeps moving when you release a key.</h3>
     <p>Thrust changes velocity. Opposite thrust slows you down. Rotation also persists: counter-rotate to stop turning. There is no automatic braking or attitude hold.</p>
     <div class="manual-grid">
@@ -83,7 +89,7 @@
     <p>Crossing the capture plane outside those limits fails the approach. Flying more than 2 km from the port or exceeding 15 minutes also ends the attempt.</p>
     <h3>Scoring, out of 1,000</h3>
     <p>Precision earns up to 600 points, fuel remaining up to 300, and time remaining up to 100. Precision averages four normalized errors: sideways distance / 0.25 m, alignment / 3 degrees, total speed / 0.16 m/s, and rotation rate / 0.5 degrees per second. Smaller errors earn more points. Failed approaches score zero.</p>
-    <h3>First approach</h3><p>Hold W for about five seconds, then coast. Watch the range and closing speed. Begin braking well before the station. Correct sideways drift with short pulses, then use Shift near the port. Press C for the docking camera.</p>
+    <h3>Near the port</h3><p>Keep closing speed below 0.15 m/s. Tap A / D and R / F to correct sideways drift. Hold Shift for gentler thrust. Release Shift when you need full braking. Press C to switch between the docking view and a view behind the ship. Ships do not collide with each other.</p>
     <p class="small">Prototype physics: rigid body, ideal thrusters, finite fuel, central Earth gravity and gravity-gradient torque. Capture uses a geometric envelope. Flexible docking hardware, plume interaction, and fuel slosh are not modeled.</p>
   </dialog>
 </body>

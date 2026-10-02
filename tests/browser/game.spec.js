@@ -21,6 +21,9 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   await expect(page.getByRole('heading', { name: 'Dock a spacecraft.' })).toBeVisible();
   await page.getByRole('button', { name: 'Practice flight' }).click();
   await expect(page.locator('#mode')).toHaveText('PRACTICE');
+  await expect(page.locator('#camera-mode')).toHaveText('DOCKING CAM');
+  await expect.poll(async () => Number(await page.locator('#range').textContent())).toBeLessThan(26);
+  await expect(page.locator('#guidance')).toContainText('W');
   await expect(page.locator('#viewport')).toHaveAttribute('data-rendered', 'true');
   const fuel = Number(await page.locator('#fuel').textContent());
   await page.keyboard.down('w');
@@ -29,7 +32,7 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   expect(Number(await page.locator('#fuel').textContent())).toBeLessThan(fuel);
   expect(Number(await page.locator('#closing').textContent())).toBeGreaterThan(0.1);
   await page.getByRole('button', { name: 'Camera' }).click();
-  await expect(page.locator('#camera-mode')).toHaveText('DOCKING CAM');
+  await expect(page.locator('#camera-mode')).toHaveText('CHASE CAM');
   expect(errors).toEqual([]);
 });
 
@@ -52,7 +55,7 @@ test('two browser sessions join a room and share a countdown and flight', async 
   await one.keyboard.down('w');
   await one.waitForTimeout(1500);
   await one.keyboard.up('w');
-  await expect.poll(async () => Number(await two.locator('#opponent-range').textContent())).toBeLessThan(150);
+  await expect.poll(async () => Number(await two.locator('#opponent-range').textContent())).toBeLessThan(25);
   await one.reload();
   await expect(one.locator('#mode')).toHaveText('FLIGHT');
   await expect(one.locator('#opponent-name')).toHaveText('Bob');

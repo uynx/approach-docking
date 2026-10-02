@@ -66,7 +66,7 @@ function stateReceived(message) {
   $('mode').textContent = message.phase.toUpperCase();
   $('opponent-name').textContent = opponent.name || 'Waiting for a second pilot';
   $('opponent-range').textContent = opponent.name ? Math.hypot(...opponent.state.slice(0, 3)).toFixed(1) : '—';
-  $('opponent-status').textContent = opponent.name ? (!opponent.connected ? 'Connection lost · reconnection allowed' : message.phase === 'lobby' ? (opponent.ready ? 'Ready for flight' : 'Reviewing the flight plan') : statusText[opponent.state[15]]) : 'Share the room link to invite a friend.';
+  $('opponent-status').textContent = opponent.name ? (!opponent.connected ? 'Disconnected. Waiting for reconnection.' : message.phase === 'lobby' ? (opponent.ready ? 'Ready' : 'Not ready yet') : statusText[opponent.state[15]]) : 'Share the room link to invite a friend.';
   $('ready').disabled = mine.ready || message.phase === 'countdown' || message.phase === 'flight';
   $('ready').textContent = mine.ready ? 'Waiting for the other pilot' : message.phase === 'finished' ? 'Ready for rematch' : 'Ready to fly';
   $('announcement').textContent = message.phase === 'countdown' ? `T − ${Math.ceil(message.countdown)}` : message.phase === 'lobby' ? 'Awaiting both pilots' : '';
@@ -112,8 +112,8 @@ function connect() {
 function startPractice() {
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(); accumulator = 0;
   $('results').hidden = true; $('mode').textContent = 'PRACTICE'; $('room-code').textContent = 'LOCAL';
-  $('opponent-name').textContent = 'Free flight'; $('opponent-range').textContent = '—';
-  $('opponent-status').textContent = 'No score submission. Reset as often as you like.';
+  $('opponent-name').textContent = 'Solo practice'; $('opponent-range').textContent = '—';
+  $('opponent-status').textContent = 'Start with W and S. You are already lined up with the port. Reset whenever you need to.';
   $('announcement').textContent = ''; showFlight();
 }
 function ready() { debriefKey = ''; $('results').hidden = true; held.clear(); send({ type: 'ready' }); }
@@ -145,14 +145,27 @@ document.addEventListener('visibilitychange', () => { held.clear(); accumulator 
 function instruments(state) {
   $('range').textContent = Math.hypot(...state.slice(0, 3)).toFixed(2);
   $('closing').textContent = state[5].toFixed(3); $('offset').textContent = Math.hypot(state[0], state[1]).toFixed(3);
+  const drift = Math.hypot(state[3], state[4]);
+  $('drift').textContent = drift.toFixed(3);
   const alignment = sim.flight_alignment(), spin = sim.flight_spin();
   $('alignment').textContent = alignment.toFixed(2); $('spin').textContent = spin.toFixed(2);
   $('fuel').textContent = state[13].toFixed(2); $('fuel-bar').value = state[13];
   const seconds = Math.floor(state[14]); $('clock').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} / 15:00`;
   $('thrust-mode').textContent = held.has('ShiftLeft') || held.has('ShiftRight') ? 'FINE CONTROL · 20% PULSE DUTY' : 'FULL THRUST · HOLD SHIFT FOR FINE';
-  for (const [id, good] of [['closing', state[5] >= 0 && state[5] <= 0.15], ['offset', Math.hypot(state[0], state[1]) <= 0.25], ['alignment', alignment <= 3], ['spin', spin <= 0.5]]) $(id).className = good ? 'good' : 'warn';
+  for (const [id, good] of [['closing', state[5] >= 0 && state[5] <= 0.15], ['offset', Math.hypot(state[0], state[1]) <= 0.25], ['drift', drift <= 0.05], ['alignment', alignment <= 3], ['spin', spin <= 0.5]]) $(id).className = good ? 'good' : 'warn';
   const braking = Math.max(0, state[5]) ** 2 / 0.4;
-  $('guidance').textContent = state[15] ? statusText[state[15]] : braking > Math.max(0, -state[2] - 3) ? 'BRAKE NOW · Your stopping distance reaches the station.' : state[2] > -15 ? 'Final approach · Use fine pulses. Keep all capture values green.' : `Stopping distance ≈ ${braking.toFixed(1)} m · Releasing thrust does not stop motion.`;
+  $('guidance').textContent = state[15] ? statusText[state[15]]
+    : !practice && snapshot?.phase !== 'flight' ? 'Both pilots must press Ready to fly.'
+    : alignment > 15 ? 'Point at your port. Arrow keys turn; opposite arrows stop the turn.'
+    : state[5] > 0.15 && braking + 2 > Math.max(0, -state[2]) ? 'Release Shift and hold S to brake. Slow below 0.15 m/s.'
+    : state[5] > 0.35 ? 'Hold S to slow down. Releasing W does not stop the ship.'
+    : spin > 0.5 ? 'Stop your rotation with the opposite arrow key, or Q / E for roll.'
+    : alignment > 3 ? 'Use short arrow-key taps to point straight at the port.'
+    : drift > 0.05 ? 'Sideways drift is too fast. Apply opposite thrust to slow it down.'
+    : Math.hypot(state[0], state[1]) > 0.25 ? 'Use A / D to move sideways and R / F to move up or down. Centre the port.'
+    : state[5] < 0.03 ? 'Hold W briefly to move toward the port. Watch your closing speed.'
+    : state[2] > -5 && state[5] > 0.15 ? 'Hold S to slow below 0.15 m/s before docking.'
+    : 'Release W to coast. Use S to slow down. Dock below 0.15 m/s.';
 }
 function frame(now) {
   const delta = Math.min(0.1, (now - lastFrame) / 1000); lastFrame = now;

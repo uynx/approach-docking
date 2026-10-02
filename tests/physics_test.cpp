@@ -8,6 +8,7 @@ void near(double value, double expected, double tolerance, const char* message) 
         throw std::runtime_error(message);
 }
 int main() {
+    near(flight::length(flight::initial().position),25,1e-9,"start 25 metres from the port");
     flight::State s;
     s.position = {10, 20, 30};
     s.velocity = {2, -1, 0.5};

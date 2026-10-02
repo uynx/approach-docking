@@ -92,7 +92,7 @@ export function createScene(canvas) {
   const earth = mesh(new THREE.SphereGeometry(63710, 80, 48), new THREE.MeshStandardMaterial({ color: 0x153958, roughness: 1, metalness: 0 }), scene, 0, -67710, 0);
   const atmosphere = mesh(new THREE.SphereGeometry(63830, 80, 48), new THREE.MeshBasicMaterial({ color: 0x54b8e9, transparent: true, opacity: 0.16, side: THREE.BackSide }), scene, 0, -67710, 0);
   const groundLight = new THREE.HemisphereLight(0x70a9cb, 0x091523, 0.5); scene.add(groundLight);
-  let dockingCamera = false;
+  let dockingCamera = true;
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   addEventListener('resize', resize); resize();
   const quaternion = s => new THREE.Quaternion(-s[7], -s[8], s[9], s[6]);
