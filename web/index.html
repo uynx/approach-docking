@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Approach · Spacecraft docking</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <canvas id="viewport" aria-label="Three-dimensional orbital station and spacecraft"></canvas>
+  <div class="vignette"></div>
+  <header>
+    <a class="brand" href="/" aria-label="Approach home"><span class="brand-mark">⌁</span> APPROACH<span class="brand-sub">SPACECRAFT DOCKING</span></a>
+    <div class="header-right"><span id="connection">INITIALIZING</span><button id="help-button" class="quiet">Flight manual <kbd>H</kbd></button></div>
+  </header>
+  <main>
+    <section id="welcome" class="welcome">
+      <div class="eyebrow"><span class="live-dot"></span> LOW EARTH ORBIT · 400 KM</div>
+      <h1>Dock a<br>spacecraft.</h1>
+      <p class="intro">Start 150 metres from the station. Control your thrust<br>and rotation to dock safely. Compare scores with a friend.</p>
+      <div class="entry-card">
+        <label for="callsign">Callsign</label>
+        <input id="callsign" maxlength="20" value="Pilot" autocomplete="nickname" spellcheck="false">
+        <button id="create" class="primary" disabled>Create room <span aria-hidden="true">↗</span></button>
+        <div class="join-row"><label class="sr-only" for="join-code">Room code</label><input id="join-code" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false"><button id="join" disabled>Join room</button></div>
+        <div class="card-divider"></div>
+        <button id="practice" class="practice" disabled>Practice flight <span aria-hidden="true">→</span></button>
+        <p class="small">Keyboard + browser. No account needed to fly.</p>
+      </div>
+      <p class="mission-note">TWO PLAYERS · 15 MINUTES PER APPROACH</p>
+    </section>
+    <aside id="station-label" class="station-label"><span class="eyebrow">TARGET / 01</span><strong>KEPLER STATION</strong><span>Two independent approach corridors</span></aside>
+    <section id="flight-ui" hidden>
+      <div class="flight-top"><span class="eyebrow" id="mode">LOBBY</span><span id="camera-mode">CHASE CAM</span><span id="clock">00:00 / 15:00</span></div>
+      <aside class="telemetry panel">
+        <div class="panel-title">FLIGHT INSTRUMENTS <span>RELATIVE TO PORT</span></div>
+        <div class="metric major"><span>PORT RANGE</span><strong id="range">150.00</strong><small>m</small></div>
+        <div class="metric"><span>CLOSING SPEED</span><strong id="closing">0.000</strong><small>m/s</small></div>
+        <div class="metric"><span>LATERAL OFFSET</span><strong id="offset">0.000</strong><small>m</small></div>
+        <div class="metric"><span>ALIGNMENT ERROR</span><strong id="alignment">0.00</strong><small>deg</small></div>
+        <div class="metric"><span>ROTATION RATE</span><strong id="spin">0.00</strong><small>deg/s</small></div>
+        <div class="metric"><span>PROPELLANT</span><strong id="fuel">80.00</strong><small>kg</small></div>
+        <meter id="fuel-bar" min="0" max="80" value="80" aria-label="Propellant remaining"></meter>
+        <div id="thrust-mode" class="panel-foot">FULL THRUST · HOLD SHIFT FOR FINE</div>
+      </aside>
+      <aside class="session panel">
+        <div class="panel-title">ROOM <span id="room-code">LOCAL</span></div>
+        <div class="pilot-line"><span class="live-dot"></span><strong id="pilot-name">Pilot</strong><span>YOU</span></div>
+        <div class="opponent"><span id="opponent-name">Waiting for a second pilot</span><span><b id="opponent-range">—</b> m</span></div>
+        <p id="opponent-status" class="small">Share the room link to invite a friend.</p>
+        <button id="copy-link">Copy invite link</button>
+        <button id="ready" class="primary">Ready to fly</button>
+        <button id="leave" class="quiet">Leave flight</button>
+      </aside>
+      <div class="reticle" aria-hidden="true"><span></span><i></i></div>
+      <div id="announcement" class="announcement" role="status"></div>
+      <div class="flight-bottom">
+        <div class="control-strip"><span><kbd>W</kbd><kbd>S</kbd> THRUST / BRAKE</span><span><kbd>A</kbd><kbd>D</kbd><kbd>R</kbd><kbd>F</kbd> TRANSLATE</span><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> AIM</span><span><kbd>Q</kbd><kbd>E</kbd> ROLL</span></div>
+        <div class="bottom-actions"><span id="guidance">Accelerate gently. Reverse thrust to stop.</span><button id="camera" class="quiet" aria-label="Camera">Camera <kbd>C</kbd></button><button id="reset-practice" class="quiet" hidden>Reset practice</button></div>
+      </div>
+    </section>
+    <section id="results" class="result-card panel" hidden>
+      <div class="eyebrow">RESULTS</div><h2 id="result-title">Docked</h2>
+      <p id="result-description"></p><div id="scores"></div>
+      <p class="small">A successful dock beats an unsuccessful attempt. Equal scores share the win.</p>
+      <button id="rematch" class="primary">Ready for rematch</button><button id="close-results" class="quiet">View flight</button>
+    </section>
+  </main>
+  <div id="toast" role="alert" hidden></div>
+  <dialog id="manual">
+    <button id="close-manual" class="close" aria-label="Close manual">×</button>
+    <div class="eyebrow">FLIGHT MANUAL</div><h2>How to play</h2>
+    <p>Start 150 metres from your own port. Both pilots get the same ship and initial conditions. Ready up together and dock within 15 minutes. Ships do not collide with each other.</p>
+    <h3>Your ship keeps moving when you release a key.</h3>
+    <p>Thrust changes velocity. Opposite thrust slows you down. Rotation also persists: counter-rotate to stop turning. There is no automatic braking or attitude hold.</p>
+    <div class="manual-grid">
+      <div><h3>Translation</h3><p><kbd>W</kbd> forward · <kbd>S</kbd> backward<br><kbd>A</kbd> left · <kbd>D</kbd> right<br><kbd>R</kbd> up · <kbd>F</kbd> down</p></div>
+      <div><h3>Rotation</h3><p>Arrow keys pitch and yaw<br><kbd>Q</kbd> / <kbd>E</kbd> roll<br><kbd>Shift</kbd> 20% pulse duty for fine control</p></div>
+    </div>
+    <h3>All capture conditions must be satisfied</h3>
+    <ul><li>Within 0.25 m sideways and 0.10 m along the approach axis.</li><li>Alignment error no more than 3 degrees.</li><li>Closing speed between 0 and 0.15 m/s; lateral speed no more than 0.05 m/s.</li><li>Rotation relative to the port no more than 0.5 degrees per second.</li></ul>
+    <p>Crossing the capture plane outside those limits fails the approach. Flying more than 2 km from the port or exceeding 15 minutes also ends the attempt.</p>
+    <h3>Scoring, out of 1,000</h3>
+    <p>Precision earns up to 600 points, fuel remaining up to 300, and time remaining up to 100. Precision averages four normalized errors: sideways distance / 0.25 m, alignment / 3 degrees, total speed / 0.16 m/s, and rotation rate / 0.5 degrees per second. Smaller errors earn more points. Failed approaches score zero.</p>
+    <h3>First approach</h3><p>Hold W for about five seconds, then coast. Watch the range and closing speed. Begin braking well before the station. Correct sideways drift with short pulses, then use Shift near the port. Press C for the docking camera.</p>
+    <p class="small">Prototype physics: rigid body, ideal thrusters, finite fuel, central Earth gravity and gravity-gradient torque. Capture uses a geometric envelope. Flexible docking hardware, plume interaction, and fuel slosh are not modeled.</p>
+  </dialog>
+</body>
+</html>

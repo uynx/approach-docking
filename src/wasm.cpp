@@ -26,4 +26,5 @@ void step_flight(double x,double y,double z,double pitch,double yaw,double roll)
 }
 double flight_alignment() { return flight::alignment(state); }
 double flight_spin() { return flight::relative_spin(state); }
+void judge_flight() { flight::judge(state); }
 }
