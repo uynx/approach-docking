@@ -32,14 +32,13 @@ find_program(WASM_CLANG NAMES clang++ REQUIRED)
 find_program(WASM_LINKER NAMES wasm-ld REQUIRED)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/web)
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/web/physics.wasm
-    COMMAND ${WASM_CLANG} --target=wasm32 -std=c++17 -O2 -ffp-contract=off
+    COMMAND ${WASM_CLANG} --target=wasm32 -mbulk-memory -std=c++17 -O2 -ffp-contract=off
         -nostdlib -fno-exceptions -fno-rtti -fno-builtin
         -Wl,--no-entry -Wl,--export=reset_flight -Wl,--export=component
         -Wl,--export=restore -Wl,--export=step_flight
         -Wl,--export=flight_alignment -Wl,--export=flight_spin
         -Wl,--export=judge_flight
         -Wl,--allow-undefined -Wl,-z,stack-size=65536
-        --ld-path=${WASM_LINKER}
         ${CMAKE_SOURCE_DIR}/src/physics.cpp ${CMAKE_SOURCE_DIR}/src/wasm.cpp
         -o ${CMAKE_BINARY_DIR}/web/physics.wasm
     DEPENDS src/physics.cpp src/physics.hpp src/wasm.cpp VERBATIM)

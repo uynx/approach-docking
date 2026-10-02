@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: approach-docking
+    runtime: docker
+    plan: free
+    region: ohio
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PORT
+        value: "8080"
