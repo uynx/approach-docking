@@ -70,4 +70,20 @@ int main() {
     require(messages[4].back().at("phase")=="flight","rematch starts after both players ready");
     require(messages[4].back().at("pilots").as_array()[0].at("state").as_array()[15].to_number<int>()==0,"rematch resets the previous result");
     std::cout << "PASS full two-pilot docking game, scores, and rematch\n";
+    game.receive(6,R"({"type":"create","name":"Host"})");
+    const auto replacement_room=messages[6].front().at("room");
+    auto join=[&](int peer) {game.receive(peer,json::serialize(json::object{{"type","join"},{"room",replacement_room},{"name","Guest"}}));};
+    join(7);
+    game.receive(7,R"({"type":"leave"})");
+    join(8);
+    require(messages[8].front().at("type")=="joined","leaving the lobby frees a slot for a replacement");
+    game.receive(6,R"({"type":"ready"})"); game.receive(8,R"({"type":"ready"})");
+    for(int i=0;i<366;++i) game.tick();
+    game.receive(8,R"({"type":"leave"})");
+    require(messages[6].back().at("pilots").as_array()[1].at("state").as_array()[15].to_number<int>()==2,"leaving an active flight forfeits the attempt");
+    game.receive(6,R"({"type":"leave"})");
+    for(int i=0;i<6;++i) game.tick();
+    game.receive(6,json::serialize(json::object{{"type","resume"},{"room",replacement_room},{"token",messages[6].front().at("token")}}));
+    require(messages[6].back().at("type")=="error","leaving revokes the resume token");
+    std::cout << "PASS leaving rooms and forfeiting flights\n";
 }

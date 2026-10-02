@@ -85,11 +85,21 @@ void Game::receive(int peer,const std::string& text) {
     auto p=std::find_if(room.pilots.begin(),room.pilots.end(),[&](const Pilot& pilot){return pilot.peer==peer;});
     if(p==room.pilots.end()) return;
     room.touched=tick_;
-    if(type=="leave") { disconnect(peer); return; }
+    if(type=="leave") {
+        if(room.phase=="flight") {
+            if(!p->state.status) p->state.status=2;
+            p->token.clear();
+        } else *p=Pilot{};
+        disconnect(peer);
+        return;
+    }
     if(type=="ready") {
         if(room.phase=="finished") {
             room.phase="lobby";
-            for(auto& pilot:room.pilots) { pilot.ready=false; pilot.state=flight::initial(); pilot.controls={}; }
+            for(auto& pilot:room.pilots) {
+                if(pilot.peer<0 && pilot.token.empty()) pilot=Pilot{};
+                pilot.ready=false; pilot.state=flight::initial(); pilot.controls={};
+            }
         }
         if(room.phase!="lobby") { error(peer,"The round has already started."); return; }
         p->ready=true;
