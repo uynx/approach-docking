@@ -7,9 +7,10 @@ let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotA
 let debriefKey = '';
 const held = new Set();
 const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired'];
-function toast(message) {
+function toast(message, persistent = false) {
   $('toast').textContent = message; $('toast').hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 6000);
+  clearTimeout(toastTimer);
+  if (!persistent) toastTimer = setTimeout(() => { $('toast').hidden = true; }, 6000);
 }
 function controls() {
   if ($('manual').open || !active) return [0, 0, 0, 0, 0, 0];
@@ -181,5 +182,5 @@ try {
   }, 50);
   setInterval(() => { if (socket?.readyState === WebSocket.OPEN) { pingAt = performance.now(); send({ type: 'ping' }); } }, 3000);
 } catch (error) {
-  $('connection').textContent = 'INITIALIZATION FAILED'; toast(error.message);
+  $('connection').textContent = 'UNABLE TO START'; toast(error.message, true);
 }

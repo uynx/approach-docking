@@ -10,6 +10,8 @@ test('blocked WebGL reports a useful explanation instead of a renderer exception
   await page.goto('/');
   await expect(page.getByRole('alert')).toContainText('WebGL is blocked or unavailable');
   await expect(page.getByRole('alert')).not.toContainText('indexOf');
+  await page.waitForTimeout(6500);
+  await expect(page.getByRole('alert')).toBeVisible();
 });
 
 test('practice renders a 3D view and thrusters change flight instruments', async ({ page }) => {
