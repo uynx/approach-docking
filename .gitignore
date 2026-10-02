@@ -1,0 +1,10 @@
+.direnv/
+.devenv/
+result
+.env
+.env.*
+!.envrc
+build/
+web/physics.wasm
+.audit/
+*.log
