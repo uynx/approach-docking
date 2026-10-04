@@ -26,6 +26,7 @@ function send(message) {
 function current() { return Array.from({ length: 17 }, (_, i) => sim.component(i)); }
 function restore(state) { state.forEach((value, i) => sim.restore(i, value)); accumulator = 0; }
 function showFlight() {
+  resetCamera();
   active = true; $('welcome').hidden = true; $('station-label').hidden = true; $('flight-ui').hidden = false;
   $('reset-practice').hidden = !practice; $('copy-link').hidden = practice; $('ready').hidden = practice;
   $('pilot-name').textContent = $('callsign').value.trim() || 'Pilot';
@@ -120,7 +121,11 @@ function startPractice() {
   $('announcement').textContent = ''; showFlight();
 }
 function ready() { debriefKey = ''; $('results').hidden = true; held.clear(); send({ type: 'ready' }); }
-function toggleCamera() { $('camera-mode').textContent = scene.toggleCamera() ? 'DOCKING CAM' : 'CHASE CAM'; }
+function resetCamera() { scene.resetCamera(); document.querySelector('.reticle').hidden = false; }
+function toggleCamera() {
+  $('camera-mode').textContent = scene.toggleCamera() ? 'DOCKING CAM' : 'CHASE CAM';
+  document.querySelector('.reticle').hidden = false;
+}
 $('create').onclick = () => send({ type: 'create', name: $('callsign').value.trim() });
 $('join').onclick = () => send({ type: 'join', room: $('join-code').value.trim().toUpperCase(), name: $('callsign').value.trim() });
 $('practice').onclick = startPractice; $('reset-practice').onclick = startPractice;
@@ -133,6 +138,28 @@ $('copy-link').onclick = async () => {
   catch { toast(`Room ${room}. Invite link: ${link}`); }
 };
 $('camera').onclick = toggleCamera;
+$('center-view').onclick = resetCamera;
+let cameraPointer, cameraX, cameraY;
+const canvas = $('viewport');
+canvas.addEventListener('contextmenu', event => { if (active) event.preventDefault(); });
+canvas.addEventListener('pointerdown', event => {
+  if (event.button !== 2 || !active) return;
+  event.preventDefault(); canvas.setPointerCapture(event.pointerId);
+  cameraPointer = event.pointerId; cameraX = event.clientX; cameraY = event.clientY;
+  canvas.style.cursor = 'grabbing';
+});
+canvas.addEventListener('pointermove', event => {
+  if (event.pointerId !== cameraPointer || !(event.buttons & 2)) return;
+  document.querySelector('.reticle').hidden = scene.moveCamera(event.clientX - cameraX, event.clientY - cameraY);
+  cameraX = event.clientX; cameraY = event.clientY;
+});
+function stopCameraDrag() {
+  if (cameraPointer !== undefined && canvas.hasPointerCapture(cameraPointer)) canvas.releasePointerCapture(cameraPointer);
+  cameraPointer = undefined; canvas.style.cursor = '';
+}
+canvas.addEventListener('pointerup', stopCameraDrag);
+canvas.addEventListener('pointercancel', stopCameraDrag);
+canvas.addEventListener('lostpointercapture', stopCameraDrag);
 $('help-button').onclick = () => { held.clear(); $('manual').showModal(); };
 $('close-manual').onclick = () => $('manual').close();
 const keys = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
@@ -140,10 +167,11 @@ addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement) return;
   if (active && keys.includes(event.code)) { event.preventDefault(); held.add(event.code); }
   if (!event.repeat && event.code === 'KeyC' && active) toggleCamera();
+  if (!event.repeat && event.code === 'KeyV' && active && !$('manual').open) resetCamera();
   if (!event.repeat && event.code === 'KeyH') { held.clear(); $('manual').open ? $('manual').close() : $('manual').showModal(); }
 });
 addEventListener('keyup', event => held.delete(event.code));
-addEventListener('blur', () => held.clear());
+addEventListener('blur', () => { held.clear(); stopCameraDrag(); });
 document.addEventListener('visibilitychange', () => { held.clear(); accumulator = 0; });
 function instruments(state) {
   $('range').textContent = Math.hypot(...state.slice(0, 3)).toFixed(2);

@@ -92,7 +92,8 @@ export function createScene(canvas) {
   const earth = mesh(new THREE.SphereGeometry(63710, 80, 48), new THREE.MeshStandardMaterial({ color: 0x153958, roughness: 1, metalness: 0 }), scene, 0, -67710, 0);
   const atmosphere = mesh(new THREE.SphereGeometry(63830, 80, 48), new THREE.MeshBasicMaterial({ color: 0x54b8e9, transparent: true, opacity: 0.16, side: THREE.BackSide }), scene, 0, -67710, 0);
   const groundLight = new THREE.HemisphereLight(0x70a9cb, 0x091523, 0.5); scene.add(groundLight);
-  let dockingCamera = true;
+  let dockingCamera = true, lookYaw = 0, lookPitch = 0;
+  const look = new THREE.Quaternion();
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   addEventListener('resize', resize); resize();
   const quaternion = s => new THREE.Quaternion(-s[7], -s[8], s[9], s[6]);
@@ -101,17 +102,29 @@ export function createScene(canvas) {
     ship.group.quaternion.copy(quaternion(s));
   }
   return {
-    toggleCamera() { dockingCamera = !dockingCamera; return dockingCamera; },
+    resetCamera() { lookYaw = 0; lookPitch = 0; look.identity(); },
+    moveCamera(dx, dy) {
+      lookYaw -= dx * 0.004;
+      lookPitch = THREE.MathUtils.clamp(lookPitch - dy * 0.004, -1.2, 1.2);
+      look.setFromEuler(new THREE.Euler(lookPitch, lookYaw, 0, 'YXZ'));
+      return lookYaw !== 0 || lookPitch !== 0;
+    },
+    toggleCamera() { dockingCamera = !dockingCamera; this.resetCamera(); return dockingCamera; },
     render(state, opponent, slot, active, thrust, now) {
       if (active && state) {
         place(own, state, slot); own.group.visible = !dockingCamera;
         own.plume.visible = thrust[2] > 0 && state[13] > 0 && !state[15];
         if (opponent) { place(other, opponent, 1 - slot); other.group.visible = true; } else other.group.visible = false;
         const q = quaternion(state);
-        const offset = new THREE.Vector3(0, dockingCamera ? 0 : 4, dockingCamera ? -3.1 : 13).applyQuaternion(q);
+        const offset = new THREE.Vector3(0, dockingCamera ? 0 : 4, dockingCamera ? -3.1 : 13);
+        if (!dockingCamera) offset.applyQuaternion(look);
+        offset.applyQuaternion(q);
         camera.position.copy(own.group.position).add(offset);
         camera.up.set(0, 1, 0).applyQuaternion(q);
-        camera.lookAt(own.group.position.clone().add(new THREE.Vector3(0, dockingCamera ? 0 : 0.8, -20).applyQuaternion(q)));
+        const target = dockingCamera
+          ? camera.position.clone().add(new THREE.Vector3(0, 0, -20).applyQuaternion(look).applyQuaternion(q))
+          : own.group.position.clone().add(new THREE.Vector3(0, 0.8, 0).applyQuaternion(q));
+        camera.lookAt(target);
         guidance.visible = true;
       } else {
         own.group.visible = true; other.group.visible = false; own.plume.visible = false;

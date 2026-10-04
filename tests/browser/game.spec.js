@@ -36,6 +36,51 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   expect(errors).toEqual([]);
 });
 
+for (const view of ['DOCKING CAM', 'CHASE CAM']) {
+  test(`mouse look changes ${view} without rotating the ship`, async ({ page }) => {
+    await page.addInitScript(() => {
+      window.requestAnimationFrame = callback => { window.flightFrame = callback; return 1; };
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Practice flight' }).click();
+    if (view === 'CHASE CAM') await page.getByRole('button', { name: 'Camera', exact: true }).click();
+    const time = await page.evaluate(() => performance.now());
+    const image = () => page.evaluate(now => {
+      window.flightFrame(now);
+      const canvas = document.getElementById('viewport');
+      const gl = canvas.getContext('webgl2');
+      const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      let hash = 2166136261;
+      for (const pixel of pixels) hash = Math.imul(hash ^ pixel, 16777619);
+      return hash;
+    }, time);
+    const before = await image();
+    const alignment = await page.locator('#alignment').textContent();
+    const fuel = await page.locator('#fuel').textContent();
+    await page.mouse.move(600, 400);
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(820, 470, { steps: 8 });
+    await page.mouse.up({ button: 'right' });
+    const after = await image();
+    expect(after).not.toBe(before);
+    await expect(page.locator('#alignment')).toHaveText(alignment);
+    await expect(page.locator('#fuel')).toHaveText(fuel);
+    await expect(page.locator('.reticle')).toBeHidden();
+    await page.mouse.move(700, 350);
+    expect(await image()).toBe(after);
+    await page.keyboard.press('v');
+    expect(await image()).toBe(before);
+    await expect(page.locator('.reticle')).toBeVisible();
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(850, 420);
+    await page.mouse.up({ button: 'right' });
+    expect(await image()).not.toBe(before);
+    await page.getByRole('button', { name: 'Center view' }).click();
+    expect(await image()).toBe(before);
+  });
+}
+
 test('two browser sessions join a room and share a countdown and flight', async ({ browser }) => {
   const a = await browser.newContext(), b = await browser.newContext();
   const one = await a.newPage(), two = await b.newPage();

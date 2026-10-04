@@ -8,6 +8,10 @@ Ships start 25 metres from their ports. Ships keep coasting and turning after
 the pilot releases the controls. Opposite thrust slows them down. A successful dock beats a failed attempt. Successful docks
 score up to 1,000 points for precision, remaining fuel, and remaining time.
 
+Hold the right mouse button and drag over the flight view to look around.
+The docking view turns the camera; the chase view orbits around your ship.
+Press V or click Center view to recenter. Press C to switch views.
+
 ## Run locally
 
 The pinned development environment requires Nix and devenv.
