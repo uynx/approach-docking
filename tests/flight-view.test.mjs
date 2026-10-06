@@ -45,7 +45,7 @@ test('visible nozzles reproduce the forces and torques of all six control axes',
       torque[0] += y * fz - z * fy; torque[1] += z * fx - x * fz; torque[2] += x * fy - y * fx;
     }
     for (let i = 0; i < 3; i++) {
-      near(force[i], axis < 3 && axis === i ? 440 * sign : 0);
+      near(force[i], axis < 3 && axis === i ? 1760 * sign : 0);
       near(torque[i], axis >= 3 && axis - 3 === i ? 165 * sign : 0);
     }
   }

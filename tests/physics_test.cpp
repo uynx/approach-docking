@@ -21,8 +21,8 @@ int main() {
     flight::Controls c;
     c.axis[2] = 1;
     for (int i = 0; i < 120; ++i) flight::advance(s, c, 1.0 / 120, false);
-    if (s.velocity.z < 0.19 || s.velocity.z > 0.21) throw std::runtime_error("paired 220 N jets accelerate a 2200 kg ship");
-    near(s.fuel, 80 - 440.0 / (220 * 9.80665), 1e-9, "propellant follows specific impulse");
+    if (s.velocity.z < 0.79 || s.velocity.z > 0.81) throw std::runtime_error("paired 880 N jets accelerate a 2200 kg ship promptly");
+    near(s.fuel, 80 - 1760.0 / (220 * 9.80665), 1e-9, "propellant follows specific impulse");
     std::cout << "PASS thrust and fuel\n";
     s = {};
     c = {};
@@ -148,6 +148,6 @@ int main() {
     if(s.velocity.x<=0 || s.velocity.x>0.00002) throw std::runtime_error("partial fuel gives only a partial impulse");
     s={}; c={}; c.axis[2]=0.2;
     for(int i=0;i<30;++i) flight::advance(s,c,flight::step_seconds,false);
-    near(s.fuel,80-440*0.05/(220*9.80665),1e-9,"fine control uses one 50 ms pulse per 250 ms");
+    near(s.fuel,80-1760*0.05/(220*9.80665),1e-9,"fine control uses one 50 ms pulse per 250 ms");
     std::cout << "PASS orbit, fuel exhaustion, and pulse control\n";
 }

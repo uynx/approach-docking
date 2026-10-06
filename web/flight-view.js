@@ -54,7 +54,7 @@ const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]
 export const thrusters = [];
 for (let axis = 0; axis < 6; axis++) for (const sign of [-1, 1]) for (const side of [-1, 1]) {
   const i = axis % 3, arm = axis === 3 ? [0,0,1] : arms[i];
-  const force = (axis < 3 ? axes[i] : cross(axes[i], arm)).map(v => v * sign * (axis < 3 ? 220 : 55 * side));
+  const force = (axis < 3 ? axes[i] : cross(axes[i], arm)).map(v => v * sign * (axis < 3 ? 880 : 55 * side));
   const position = arm.map(v => v * side * (axis < 3 ? 1 : 1.5));
   const direction = force.findIndex(v => v !== 0);
   position[direction] = -Math.sign(force[direction]) * (direction === 2 ? 2.2 : 1.4);
