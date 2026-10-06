@@ -49,9 +49,13 @@ int main() {
             if(state[15].to_number<int>()!=0) continue;
             auto v=[&](int index){return state[index].to_number<double>();};
             const double speed=std::min(1.0,std::sqrt(std::max(0.0,-v(2))*0.05));
-            auto axis=[](double acceleration){return std::clamp(acceleration/0.2,-1.0,1.0);};
-            const json::array controls{axis(-0.1*v(0)-0.8*v(3)),axis(-0.1*v(1)-0.8*v(4)-0.002266*v(5)),
-                axis(0.8*(speed-v(5))),0,0,0};
+            const flight::Quat q{v(6),v(7),v(8),v(9)}, inverse{q.w,-q.x,-q.y,-q.z};
+            const auto acceleration=flight::rotate(inverse,{-0.1*v(0)-0.8*v(3),-0.1*v(1)-0.8*v(4)-0.002266*v(5),0.8*(speed-v(5))});
+            const auto orbit=flight::rotate(inverse,{std::sqrt(flight::earth_mu/std::pow(flight::orbit_radius,3)),0,0});
+            auto axis=[](double acceleration){return std::clamp(acceleration/0.8,-1.0,1.0);};
+            auto turn=[&](double angle,double spin,double inertia){return std::clamp((-0.18*angle-1.2*spin)*inertia/165,-1.0,1.0);};
+            const json::array controls{axis(acceleration.x),axis(acceleration.y),axis(acceleration.z),
+                turn(q.x,v(10)-orbit.x,3332),turn(q.y,v(11)-orbit.y,3332),turn(q.z,v(12)-orbit.z,2448)};
             game.receive(peer,json::serialize(json::object{{"type","input"},{"seq",frame+10},{"axes",controls}}));
         }
         for(int i=0;i<6;++i) game.tick();
