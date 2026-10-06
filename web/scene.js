@@ -23,10 +23,11 @@ export function createScene(canvas) {
   for (const world of [scene,sky]) {
     const sun = new THREE.DirectionalLight(0xfff6e8, 3.1);
     sun.position.copy(sunDirection).multiplyScalar(160);
-    if(world===scene){sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-60,right:60,top:60,bottom:-60,near:1,far:400});sun.shadow.camera.updateProjectionMatrix();sun.shadow.normalBias=0.04;}
+    if(world===scene){sun.castShadow=true;sun.shadow.mapSize.set(4096,4096);Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:260});sun.shadow.camera.updateProjectionMatrix();sun.shadow.bias=-0.00004;sun.shadow.normalBias=0.015;}
     world.add(sun);
   }
   scene.add(new THREE.HemisphereLight(0x171c22,0x719eb4,1.3));
+  sky.add(new THREE.AmbientLight(0xb2c6dc,0.75));
   const station = stationModel(renderer.capabilities.getMaxAnisotropy());scene.add(station.group);
   const own = spacecraftModel(0x6daaa7), other = spacecraftModel(0xc6a06c);
   scene.add(own.group,other.group);
@@ -40,6 +41,8 @@ export function createScene(canvas) {
   plasma.name='entry-plasma';plasma.visible=false;scene.add(plasma);
   const loader = new THREE.TextureLoader();
   let earth;
+  const reflectionSky=new THREE.Scene();reflectionSky.background=new THREE.Color(0x8bbce3);
+  const reflectionFilter=new THREE.PMREMGenerator(renderer),skyReflection=reflectionFilter.fromScene(reflectionSky).texture;reflectionFilter.dispose();
   const glowCanvas=document.createElement('canvas');glowCanvas.width=256;glowCanvas.height=256;
   const glowContext=glowCanvas.getContext('2d'),glow=glowContext.createRadialGradient(128,128,0,128,128,128);
   glow.addColorStop(0,'#fffdf2');glow.addColorStop(0.045,'#fff6dd');glow.addColorStop(0.09,'#fff0c466');glow.addColorStop(0.3,'#ffa95f12');glow.addColorStop(1,'#ffa95f00');
@@ -61,8 +64,8 @@ export function createScene(canvas) {
   const ready = Promise.all([
     loader.loadAsync('/assets/earth.jpg').then(texture=>{
       texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=renderer.capabilities.getMaxAnisotropy();
-      const material=new THREE.MeshStandardMaterial({map:texture,roughness:0.85});
-      material.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat ocean=smoothstep(0.025,0.12,diffuseColor.b-max(diffuseColor.r,diffuseColor.g));roughnessFactor=mix(0.85,0.23,ocean);');};
+      const material=new THREE.MeshStandardMaterial({map:texture,roughness:0.85,envMap:skyReflection,envMapIntensity:0.8});
+      material.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat ocean=smoothstep(1.15,1.8,diffuseColor.b/max(0.0001,max(diffuseColor.r,diffuseColor.g)));roughnessFactor=mix(0.85,0.23,ocean);');};
       earth = new THREE.Mesh(new THREE.SphereGeometry(6371,256,192),material);earth.name='earth';
       earth.position.set(0,-6771,0);earth.rotation.z=-Math.PI/2;sky.add(earth);
     }),

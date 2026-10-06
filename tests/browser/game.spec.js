@@ -313,6 +313,35 @@ test('solar-cell detail uses filtered texture samples instead of tiny overlappin
   for(const panel of detail) {expect(panel.mip).toBe(true);expect(panel.filter).toBe(1008);expect(panel.anisotropy).toBeGreaterThan(1);expect(panel.roughness).toBeGreaterThan(0.5);}
 });
 
+test('station collar join has one opaque surface instead of overlapping shell caps',async ({page})=>{
+  await controlledFlight(page);
+  const surfaces=await page.evaluate(async ()=>{
+    const THREE=await import('/vendor/three.module.js');
+    const {stationModel}=await import('/models.js');
+    const station=stationModel(1);station.group.updateMatrixWorld(true);
+    for(const part of station.group.children)part.material=part.material.clone(),part.material.side=THREE.DoubleSide;
+    const ray=new THREE.Raycaster(new THREE.Vector3(-18.2,0.15,-1.5),new THREE.Vector3(0,0,1));
+    return new Set(ray.intersectObjects(station.group.children,false).filter(hit=>Math.abs(hit.point.z+1)<1e-6).map(hit=>hit.object.id)).size;
+  });
+  expect(surfaces).toBe(1);
+});
+
+test('Earth remains readable beneath the sunlit spacecraft',async ({page})=>{
+  await controlledFlight(page);
+  await page.getByRole('button',{name:'Camera',exact:true}).click();
+  const brightness=await page.evaluate(()=>{
+    window.flightFrame(window.frameTime);
+    const canvas=document.getElementById('viewport'),gl=canvas.getContext('webgl2');
+    const width=Math.floor(canvas.width*0.2),height=Math.floor(canvas.height*0.1);
+    const pixels=new Uint8Array(width*height*4);
+    gl.readPixels(Math.floor(canvas.width*0.4),0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    let total=0;
+    for(let i=0;i<pixels.length;i+=4)total+=0.2126*pixels[i]+0.7152*pixels[i+1]+0.0722*pixels[i+2];
+    return total/(width*height);
+  });
+  expect(brightness).toBeGreaterThan(12);
+});
+
 test('reset clears wreckage even after the crashed capsule reaches the ground',async ({page})=>{
   await controlledFlight(page);
   await pose(page,{2:-0.2,5:30});

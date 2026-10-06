@@ -106,7 +106,7 @@ export function stationModel(anisotropy = 1) {
       tankParts(fragments,'station-tank',[x+side*0.9,-3.1,-13],0.6,x>0?1:0);
       strut(group,[x+side*0.9,-2.5,-13],[x+side*0.9,-3.1,-13],0.13,dark);
     }
-    mesh(group, new THREE.CylinderGeometry(0.9, 2.8, 2, 64).rotateX(Math.PI/2), white, [x,0,-2]);
+    mesh(group, new THREE.CylinderGeometry(0.9, 2.8, 2, 64,1,true).rotateX(Math.PI/2), white, [x,0,-2]);
     for(let a=0;a<12;a++) {
       const angle=a*Math.PI/6;
       strut(group,[x+0.97*Math.cos(angle),0.97*Math.sin(angle),-1.03],
