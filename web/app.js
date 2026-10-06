@@ -1,3 +1,4 @@
+import { Flight } from './state.js';
 import { createScene } from './scene.js';
 import { dockingIndicators } from './flight-view.js';
 
@@ -24,10 +25,10 @@ function send(message) {
   if (socket?.readyState === WebSocket.OPEN) { socket.send(JSON.stringify(message)); return true; }
   toast('Connecting to the server. Try again in a moment.'); return false;
 }
-function current() { return Array.from({ length: 35 }, (_, i) => sim.component(i)); }
+function current() { return Array.from({ length: Object.keys(Flight).length }, (_, i) => sim.component(i)); }
 function restore(state) { state.forEach((value, i) => sim.restore(i, value)); accumulator = 0; }
 function showFlight() {
-  resetCamera();
+  scene.resetSimulation();resetCamera();
   active = true; $('welcome').hidden = true; $('station-label').hidden = true; $('flight-ui').hidden = false;
   $('reset-practice').hidden = !practice; $('copy-link').hidden = practice; $('ready').hidden = practice;
   $('pilot-name').textContent = $('callsign').value.trim() || 'Pilot';
@@ -35,51 +36,52 @@ function showFlight() {
 }
 function showResults(pilots) {
   const mine = pilots[slot], theirs = pilots[1 - slot];
-  const key = `${practice ? 'practice' : snapshot.phase}:${mine.state[15]}`;
+  const key = `${practice ? 'practice' : snapshot.phase}:${mine.state[Flight.status]}`;
   if (debriefKey === key) return;
   debriefKey = key;
-  if(mine.state[15]===2||mine.state[15]===4) {scene.impactView();$('camera-mode').textContent='CHASE CAM';}
-  $('result-title').textContent = mine.state[15] === 1 ? 'Docked' : 'Approach failed';
-  const successful = pilots.filter(p => p.state[15] === 1);
+  if(mine.state[Flight.status]===2||mine.state[Flight.status]===4) {scene.impactView();$('camera-mode').textContent='CHASE CAM';}
+  $('result-title').textContent = mine.state[Flight.status] === 1 ? 'Docked' : 'Approach failed';
+  const successful = pilots.filter(p => p.state[Flight.status] === 1);
   if (practice) $('result-description').textContent = 'Practice complete. Reset to fly another approach.';
   else if (snapshot.phase !== 'finished') $('result-description').textContent = 'Your attempt is complete. The other pilot is still flying.';
   else if (!successful.length) $('result-description').textContent = 'Neither pilot docked. Try another approach together.';
-  else if (mine.state[16] === theirs.state[16]) $('result-description').textContent = 'Equal scores. You share the win.';
-  else $('result-description').textContent = `${mine.state[16] > theirs.state[16] ? mine.name : theirs.name} wins this round.`;
+  else if (mine.state[Flight.score] === theirs.state[Flight.score]) $('result-description').textContent = 'Equal scores. You share the win.';
+  else $('result-description').textContent = `${mine.state[Flight.score] > theirs.state[Flight.score] ? mine.name : theirs.name} wins this round.`;
   $('scores').replaceChildren(...pilots.filter(p => p.name).map(p => {
     const line = document.createElement('div'); line.className = 'score-row';
-    const name = document.createElement('span'); name.textContent = `${p.name} · ${statusText[p.state[15]]}`;
-    const score = document.createElement('strong'); score.textContent = `${Math.round(p.state[16])} / 1000`;
+    const name = document.createElement('span'); name.textContent = `${p.name} · ${statusText[p.state[Flight.status]]}`;
+    const score = document.createElement('strong'); score.textContent = `${Math.round(p.state[Flight.score])} / 1000`;
     line.append(name, score); return line;
   }));
   $('rematch').textContent = practice ? 'Try again' : 'Ready for rematch';
   $('rematch').disabled = !practice && snapshot.phase !== 'finished';
-  $('results').dataset.crash = String(mine.state[15] === 2 || mine.state[15] === 4);
+  $('results').dataset.crash = String(mine.state[Flight.status] === 2 || mine.state[Flight.status] === 4);
   $('results').hidden = false;
 }
 function stateReceived(message) {
   const previousPhase = snapshot?.phase;
+  if(!practice&&message.phase==='lobby'&&previousPhase!=='lobby')scene.resetSimulation();
   snapshot = message; lastSnapshotAt = performance.now();
   if (practice) return;
   const mine = message.pilots[slot], opponent = message.pilots[1 - slot];
   $('pilot-name').textContent = mine.name;
   restore(mine.state);
   message.station?.forEach((v,i)=>sim.restore_station(i,v));
-  if (message.phase === 'flight' && !mine.state[15]) {
+  if (message.phase === 'flight' && !mine.state[Flight.status]) {
     for (let i = 0; i < Math.min(12, Math.floor(latency / 2000 * 120)); i++) sim.step_flight(...controls(),slot);
   }
   $('mode').textContent = message.phase.toUpperCase();
   $('opponent-name').textContent = opponent.name || 'Waiting for a second pilot';
   $('opponent-range').textContent = opponent.name ? Math.hypot(...opponent.state.slice(0, 3)).toFixed(1) : '—';
   $('opponent-status').textContent = !opponent.name ? 'Share the room link to invite a friend.'
-    : opponent.state[15] ? statusText[opponent.state[15]]
+    : opponent.state[Flight.status] ? statusText[opponent.state[Flight.status]]
     : !opponent.connected ? 'Disconnected. Waiting for reconnection.'
     : message.phase === 'lobby' ? (opponent.ready ? 'Ready' : 'Not ready yet') : statusText[0];
   $('ready').disabled = mine.ready || message.phase === 'countdown' || message.phase === 'flight';
   $('ready').textContent = mine.ready ? 'Waiting for the other pilot' : message.phase === 'finished' ? 'Ready for rematch' : 'Ready to fly';
   $('announcement').textContent = message.phase === 'countdown' ? `T − ${Math.ceil(message.countdown)}` : message.phase === 'lobby' ? 'Awaiting both pilots' : '';
   if (previousPhase !== message.phase) $('results').hidden = true;
-  if (mine.state[15]) {
+  if (mine.state[Flight.status]) {
     if (previousPhase !== 'finished' && message.phase === 'finished') $('results').hidden = true;
     showResults(message.pilots);
   }
@@ -121,7 +123,7 @@ function startPractice(entry = entryPractice) {
   entryPractice=entry;
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(); accumulator = 0;
   if(entry) {
-    sim.restore(1,-310000);sim.restore(4,-300);sim.restore(5,-600);sim.restore(6,0);sim.restore(7,1);
+    sim.restore(Flight.y,-310000);sim.restore(Flight.vy,-300);sim.restore(Flight.vz,-600);sim.restore(Flight.qw,0);sim.restore(Flight.qx,1);
     scene.impactView();
   }
   $('results').hidden = true; $('mode').textContent = entry?'ATMOSPHERIC ENTRY':'PRACTICE'; $('room-code').textContent = 'LOCAL';
@@ -192,33 +194,33 @@ function instruments(physical) {
   const axes = controls();
   $('attitude-command').textContent = axes[3] ? (axes[3] < 0 ? 'PITCH UP · TAIL DOWN' : 'PITCH DOWN · TAIL UP') : axes[4] ? (axes[4] > 0 ? 'YAW RIGHT · TAIL LEFT' : 'YAW LEFT · TAIL RIGHT') : axes[5] ? 'ROLL · OPPOSITE KEY TO STOP' : 'ARROWS TILT · , / . ROLL';
   $('docking-aid').dataset.state = indicators.ready ? 'ready' : !indicators.speed ? 'brake' : 'correct';
-  $('capture-status').textContent = state[15] ? statusText[state[15]].toUpperCase() : indicators.ready ? 'WITHIN CAPTURE LIMITS' : !indicators.speed ? 'CORRECT CLOSING SPEED' : 'CORRECT ALIGNMENT / DRIFT';
+  $('capture-status').textContent = state[Flight.status] ? statusText[state[Flight.status]].toUpperCase() : indicators.ready ? 'WITHIN CAPTURE LIMITS' : !indicators.speed ? 'CORRECT CLOSING SPEED' : 'CORRECT ALIGNMENT / DRIFT';
   for (const id of ['speed', 'offset', 'drift', 'rotation']) {
     $('cue-' + id).dataset.good = String(indicators[id]);
     $('cue-' + id).setAttribute('aria-label', id + (indicators[id] ? ' within limit' : ' outside limit'));
   }
   $('range').textContent = Math.hypot(...state.slice(0, 3)).toFixed(2);
-  $('closing').textContent = state[5].toFixed(3); $('offset').textContent = Math.hypot(state[0], state[1]).toFixed(3);
-  const drift = Math.hypot(state[3], state[4]);
+  $('closing').textContent = state[Flight.vz].toFixed(3); $('offset').textContent = Math.hypot(state[Flight.x], state[Flight.y]).toFixed(3);
+  const drift = Math.hypot(state[Flight.vx], state[Flight.vy]);
   $('drift').textContent = drift.toFixed(3);
   const alignment = indicators.alignment, spin = indicators.spin;
   $('alignment').textContent = alignment.toFixed(2); $('spin').textContent = spin.toFixed(2);
-  $('fuel').textContent = state[13].toFixed(2); $('fuel-bar').value = state[13];
-  const seconds = Math.floor(state[14]); $('clock').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} / 15:00`;
+  $('fuel').textContent = state[Flight.fuel].toFixed(2); $('fuel-bar').value = state[Flight.fuel];
+  const seconds = Math.floor(state[Flight.elapsed]); $('clock').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} / 15:00`;
   $('thrust-mode').textContent = held.has('ShiftLeft') || held.has('ShiftRight') ? 'FINE CONTROL · 20% PULSE DUTY' : 'FULL THRUST · HOLD SHIFT FOR FINE';
-  for (const [id, good] of [['closing', state[5] >= 0 && state[5] <= 0.15], ['offset', Math.hypot(state[0], state[1]) <= 0.25], ['drift', drift <= 0.05], ['alignment', alignment <= 3], ['spin', spin <= 0.5]]) $(id).className = good ? 'good' : 'warn';
-  const braking = Math.max(0, state[5]) ** 2 / 0.4;
-  $('guidance').textContent = state[15] ? statusText[state[15]]
+  for (const [id, good] of [['closing', state[Flight.vz] >= 0 && state[Flight.vz] <= 0.15], ['offset', Math.hypot(state[Flight.x], state[Flight.y]) <= 0.25], ['drift', drift <= 0.05], ['alignment', alignment <= 3], ['spin', spin <= 0.5]]) $(id).className = good ? 'good' : 'warn';
+  const braking = Math.max(0, state[Flight.vz]) ** 2 / 0.4;
+  $('guidance').textContent = state[Flight.status] ? statusText[state[Flight.status]]
     : !practice && snapshot?.phase !== 'flight' ? 'Both pilots must press Ready to fly.'
     : alignment > 15 ? 'Point at your port. Arrow keys turn; opposite arrows stop the turn.'
-    : state[5] > 0.15 && braking + 2 > Math.max(0, -state[2]) ? 'Release Shift and hold S to brake. Slow below 0.15 m/s.'
-    : state[5] > 0.35 ? 'Hold S to slow down. Releasing W does not stop the ship.'
+    : state[Flight.vz] > 0.15 && braking + 2 > Math.max(0, -state[Flight.z]) ? 'Release Shift and hold S to brake. Slow below 0.15 m/s.'
+    : state[Flight.vz] > 0.35 ? 'Hold S to slow down. Releasing W does not stop the ship.'
     : spin > 0.5 ? 'Stop your rotation with the opposite arrow key, or Q / E for roll.'
     : alignment > 3 ? 'Use short arrow-key taps to point straight at the port.'
     : drift > 0.05 ? 'Sideways drift is too fast. Apply opposite thrust to slow it down.'
-    : Math.hypot(state[0], state[1]) > 0.25 ? 'Use A / D to move sideways and R / F to move up or down. Centre the port.'
-    : state[5] < 0.03 ? 'Hold W briefly to move toward the port. Watch your closing speed.'
-    : state[2] > -5 && state[5] > 0.15 ? 'Hold S to slow below 0.15 m/s before docking.'
+    : Math.hypot(state[Flight.x], state[Flight.y]) > 0.25 ? 'Use A / D to move sideways and R / F to move up or down. Centre the port.'
+    : state[Flight.vz] < 0.03 ? 'Hold W briefly to move toward the port. Watch your closing speed.'
+    : state[Flight.z] > -5 && state[Flight.vz] > 0.15 ? 'Hold S to slow below 0.15 m/s before docking.'
     : 'Release W to coast. Use S to slow down. Dock below 0.15 m/s.';
 }
 function frame(now) {
@@ -230,8 +232,8 @@ function frame(now) {
   }
   const state = current();
   if (active) instruments(state);
-  if (practice && state[15]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }]);
-  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now, Array.from({length:15},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
+  if (practice && state[Flight.status]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }]);
+  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
   requestAnimationFrame(frame);
 }
 try {
@@ -240,12 +242,14 @@ try {
   const response = await fetch('/physics.wasm');
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
   const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });
-  sim = instance.exports; sim.reset_flight();
+  sim = instance.exports;
+  if(sim.state_size()!==Object.keys(Flight).length) throw new Error('Physics and display versions differ. Reload after rebuilding.');
+  sim.reset_flight();
   $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';
   connect(); requestAnimationFrame(frame);
   setInterval(() => {
-    if (!practice && snapshot?.phase === 'flight' && !snapshot.pilots[slot].state[15] && socket?.readyState === WebSocket.OPEN)
+    if (!practice && snapshot?.phase === 'flight' && !snapshot.pilots[slot].state[Flight.status] && socket?.readyState === WebSocket.OPEN)
       send({ type: 'input', seq: ++sequence, axes: controls() });
   }, 50);
   setInterval(() => { if (socket?.readyState === WebSocket.OPEN) { pingAt = performance.now(); send({ type: 'ping' }); } }, 3000);

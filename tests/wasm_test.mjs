@@ -25,3 +25,19 @@ collision.forEach((value,index)=>{
 assert.equal(sim.component(15),2);
 assert.ok(Math.hypot(sim.station_component(10),sim.station_component(11),sim.station_component(12))>0);
 console.log('PASS native/WASM collision, torque, fracture metadata and station motion agree');
+const { Flight, Station } = await import('../web/state.js');
+assert.equal(sim.state_size(), Object.keys(Flight).length);
+assert.equal(sim.station_size(), Object.keys(Station).length);
+for (const [fields,read,write] of [[Flight,sim.component,sim.restore],[Station,sim.station_component,sim.restore_station]]) {
+  for (const [name,index] of Object.entries(fields)) {
+    const value=index+1;
+    write(index,value);assert.equal(read(index),value,`restore ${name}`);
+    write(index,NaN);write(index,Infinity);assert.equal(read(index),value,`reject nonfinite ${name}`);
+  }
+  assert.equal(read(-1),0);assert.equal(read(Object.keys(fields).length),0);
+}
+sim.reset_flight();
+assert.equal(sim.component(Flight.fuel),80);
+assert.equal(sim.component(Flight.impactPart),-1);
+assert.equal(sim.station_component(Station.brokenPanels),0);
+console.log('PASS every named state field round-trips and rejects nonfinite input');

@@ -1,7 +1,8 @@
+import { Flight } from './state.js';
 export const meanMotion = Math.sqrt(3.986004418e14 / 6771000 ** 3);
 
 export function shipPosition(s, slot) {
-  return [s[0] + (slot ? 18 : -18), s[1], 3.2 - s[2]];
+  return [s[Flight.x] + (slot ? 18 : -18), s[Flight.y], 3.2 - s[Flight.z]];
 }
 
 export function clipCamera(origin, desired, boxes, clearance = 0.25) {
@@ -38,11 +39,11 @@ export function clipCamera(origin, desired, boxes, clearance = 0.25) {
 export function dockingIndicators(s) {
   const [w, x, y, z] = s.slice(6, 10);
   const alignment = 2 * Math.acos(Math.min(1, Math.abs(w))) * 180 / Math.PI;
-  const spin = Math.hypot(s[10] - meanMotion * (1 - 2 * (y*y + z*z)),
-    s[11] - meanMotion * 2 * (x*y - w*z), s[12] - meanMotion * 2 * (x*z + w*y)) * 180 / Math.PI;
-  const speed = s[5] >= 0 && s[5] <= 0.15;
-  const offset = Math.hypot(s[0], s[1]) <= 0.25;
-  const drift = Math.hypot(s[3], s[4]) <= 0.05;
+  const spin = Math.hypot(s[Flight.wx] - meanMotion * (1 - 2 * (y*y + z*z)),
+    s[Flight.wy] - meanMotion * 2 * (x*y - w*z), s[Flight.wz] - meanMotion * 2 * (x*z + w*y)) * 180 / Math.PI;
+  const speed = s[Flight.vz] >= 0 && s[Flight.vz] <= 0.15;
+  const offset = Math.hypot(s[Flight.x], s[Flight.y]) <= 0.25;
+  const drift = Math.hypot(s[Flight.vx], s[Flight.vy]) <= 0.05;
   const rotation = alignment <= 3 && spin <= 0.5;
   const roll = Math.atan2(2 * (w*z + x*y), 1 - 2 * (y*y + z*z)) * 180 / Math.PI;
   return { speed, offset, drift, rotation, alignment, spin, roll, ready: speed && offset && drift && rotation };
@@ -62,6 +63,6 @@ for (let axis = 0; axis < 6; axis++) for (const sign of [-1, 1]) for (const side
 
 export function firing(thruster, commands, state) {
   const command = commands[thruster.axis] * thruster.sign;
-  const phase = (Math.floor((state[14] + 1e-8) / 0.05) % 5) / 5;
-  return state[13] > 0 && state[15] === 0 && command > phase;
+  const phase = (Math.floor((state[Flight.elapsed] + 1e-8) / 0.05) % 5) / 5;
+  return state[Flight.fuel] > 0 && state[Flight.status] === 0 && command > phase;
 }

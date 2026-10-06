@@ -14,3 +14,5 @@
 @media(max-height:650px){.side-panel{bottom:125px;width:180px}#side-view{height:100px}.side-note{display:none}.session .pilot-line,.session .opponent,.session .small{display:none}.session{width:180px}.telemetry{top:140px}.flight-top{top:95px}.flight-bottom{padding:8px}.side-panel .panel-title span{display:none}}
 
 #attitude-command{padding:8px;font:9px monospace;color:var(--cyan);background:#0b141de8}
+
+#station-motion{padding:6px 8px;font:9px monospace;line-height:1.5;color:var(--muted);background:#0b141de8}

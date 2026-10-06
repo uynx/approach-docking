@@ -35,6 +35,7 @@ profile; the failure occurs while initializing graphics. Chromium also works.
 
 ```sh
 devenv shell -- ctest --test-dir build --output-on-failure
+node --test tests/damage.test.mjs tests/flight-view.test.mjs
 CHROMIUM_PATH=/path/to/chromium npm run test:browser
 ```
 
@@ -180,3 +181,30 @@ loss, fragment recoil and explosion coupling are approximations. Gas mixing,
 blast propagation through structures, ablation, thermal failure, fuel slosh and
 flexible docking mechanisms are not resolved. Ships do not collide with each
 other. Station recoil is integrated around the original reference orbit.
+
+## Code ownership
+
+| File | Responsibility |
+| --- | --- |
+| `src/physics.cpp` | Flight integration, contact impulses, station dynamics, capture and atmosphere |
+| `src/state_io.hpp` | Ordered state fields shared by native JSON and WASM reads/restores |
+| `src/game.cpp` | Rooms, authoritative ticks, input validation, scoring and round lifecycle |
+| `src/wasm.cpp` | Browser interface to the shared physics |
+| `web/state.js` | Named browser indices for the state format |
+| `web/app.js` | Input, network reconciliation, practice lifecycle and instruments |
+| `web/scene.js` | Cameras, lighting, Earth, views and placement |
+| `web/models.js` | Geometry, materials, detachable sections and deformation |
+| `web/damage.js` | Pure crush, pressure and fragment-energy calculations |
+| `web/damage-effects.js` | Impact history, detached meshes, bursts and round resets |
+| `web/flight-view.js` | Camera clearance, docking cues and thruster layout |
+
+Add state fields at the end of the native visitor and browser index map. Update
+state sizes and the protocol tests together. Browser startup checks the format
+size, and the WASM suite round-trips every field. Native/WASM trajectory tests
+also check collision metadata and station motion against an independent native
+serialization fixture.
+
+A new round calls `resetSimulation()` explicitly. Damage effects own all debris,
+flashes, visibility and dent history, including damage caused only by the other
+pilot. Add browser modules to the server's static-asset allowlist. Keep physics
+changes in the shared C++ core so multiplayer authority and local practice agree.

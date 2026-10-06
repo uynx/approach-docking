@@ -111,7 +111,7 @@ test('two browser sessions join a room and share a countdown and flight', async 
 });
 
 test('new flight modules and NASA textures are served with their actual MIME types', async ({ request }) => {
-  for (const [path,type] of [['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg']]) {
+  for (const [path,type] of [['state.js','text/javascript'],['damage-effects.js','text/javascript'],['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg']]) {
     const response=await request.get('/'+path);
     expect(response.status()).toBe(200);
     expect(response.headers()['content-type']).toContain(type);
@@ -271,6 +271,21 @@ test('solar-cell detail uses filtered texture samples instead of tiny overlappin
   for(const panel of detail) {expect(panel.mip).toBe(true);expect(panel.filter).toBe(1008);expect(panel.anisotropy).toBeGreaterThan(1);expect(panel.roughness).toBeGreaterThan(0.5);}
 });
 
+test('reset clears wreckage even after the crashed capsule reaches the ground',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.2,5:30});
+  for(let i=0;i<8;i++)await pose(page,{},100);
+  expect(Number(await page.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThan(0);
+  const vertices=()=>page.evaluate(()=>window.capsuleObject.children.filter(p=>p.name==='capsule-hull').flatMap(p=>Array.from(p.geometry.attributes.position.array)));
+  const crushed=await vertices();
+  await pose(page,{15:4});
+  const grounded=await vertices();
+  expect(Math.max(...grounded.map((v,i)=>Math.abs(v-crushed[i])))).toBe(0);
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await pose(page,{});
+  await expect(page.locator('#viewport')).toHaveAttribute('data-fragments','0');
+  expect(await page.evaluate(()=>window.capsuleObject.children.filter(p=>p.name==='capsule-hull'&&!p.visible).length)).toBe(0);
+});
+
 test('entry practice falls toward Earth and displays heating plasma only in the atmosphere',async ({page})=>{
   await controlledFlight(page);
   await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','false');
@@ -281,4 +296,30 @@ test('entry practice falls toward Earth and displays heating plasma only in the 
   await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','true');
   await expect(page.locator('#entry-telemetry')).toBeVisible();
   expect(await page.evaluate(()=>window.physics.component(15))).toBe(0);
+});
+
+test('reset restores station fragments after an opponent-only crash',async ({page})=>{
+  await controlledFlight(page);
+  const result=await page.evaluate(async ()=>{
+    const THREE=await import('/vendor/three.module.js');
+    const {stationModel,spacecraftModel}=await import('/models.js');
+    const {createDamageEffects}=await import('/damage-effects.js');
+    const {Flight,Station}=await import('/state.js');
+    const world=new THREE.Scene(),station=stationModel(1),own=spacecraftModel(0),other=spacecraftModel(1);
+    for(const owner of [station,own,other]) {
+      world.add(owner.group);owner.velocity=new THREE.Vector3();owner.offset=new THREE.Vector3();
+    }
+    const effects=createDamageEffects(world,station,[own,other]);
+    const local=Array.from({length:35},(_,i)=>window.physics.component(i)),remote=[...local],structure=new Array(15).fill(0);
+    local[Flight.status]=1;
+    Object.assign(remote,{[Flight.status]:2,[Flight.normalZ]:-1,[Flight.impactSpeed]:30,[Flight.impactAge]:1,[Flight.impactSequence]:1,[Flight.impactMass]:2100,[Flight.impactPart]:-1});
+    structure[Station.brokenPanels]=1;
+    effects.update([local,remote],structure,0.1);
+    const before=world.children.filter(p=>p.name.endsWith('-fragment')).length;
+    effects.reset();
+    return {before,after:effects.advance(0).fragments,meshes:world.children.filter(p=>p.name.endsWith('-fragment')).length,
+      hidden:[...station.fragments,...other.fragments,...other.pressurePanels].filter(p=>!p.visible).length};
+  });
+  expect(result.before).toBeGreaterThan(24);
+  expect(result.after).toBe(0);expect(result.meshes).toBe(0);expect(result.hidden).toBe(0);
 });

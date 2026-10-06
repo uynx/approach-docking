@@ -1,4 +1,5 @@
 #include "game.hpp"
+#include "state_io.hpp"
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -22,10 +23,9 @@ std::string pilot_name(const json::object& obj) {
     return name;
 }
 json::array state_array(const flight::State& s) {
-    return {s.position.x,s.position.y,s.position.z,s.velocity.x,s.velocity.y,s.velocity.z,
-        s.attitude.w,s.attitude.x,s.attitude.y,s.attitude.z,s.omega.x,s.omega.y,s.omega.z,
-        s.fuel,s.elapsed,s.status,s.score,s.impact_normal.x,s.impact_normal.y,s.impact_normal.z,
-        s.impact_speed,s.impact_point.x,s.impact_point.y,s.impact_point.z,s.impact_age,s.impact_arm.x,s.impact_arm.y,s.impact_arm.z,s.impact_mass,s.crush_force,s.station_share,s.impact_sequence,s.impact_part,s.burned_fuel,s.station_burned_fuel};
+    json::array values;
+    flight::visit_state(s,[&](int, auto value) { values.push_back(value); });
+    return values;
 }
 }
 void Game::error(int peer,const std::string& message) {
@@ -37,12 +37,11 @@ void Game::broadcast(const std::string& code,const Room& room) {
         {"connected",p.peer>=0},{"ready",p.ready},{"seq",p.sequence},
         {"state",state_array(p.state)},{"alignment",flight::alignment(p.state)},
         {"spin",flight::relative_spin(p.state)}});
+    json::array station;
+    flight::visit_station(room.station,[&](int, auto value) { station.push_back(value); });
     const json::object message{{"type","state"},{"room",code},{"phase",room.phase},
         {"tick",tick_},{"countdown",room.start>tick_ ? (room.start-tick_)/120.0 : 0},
-        {"pilots",pilots},{"station",json::array{room.station.position.x,room.station.position.y,room.station.position.z,
-            room.station.velocity.x,room.station.velocity.y,room.station.velocity.z,
-            room.station.attitude.w,room.station.attitude.x,room.station.attitude.y,room.station.attitude.z,
-            room.station.omega.x,room.station.omega.y,room.station.omega.z,room.station.broken_panels,room.station.ruptured_tanks}}};
+        {"pilots",pilots},{"station",station}};
     for(const auto& p:room.pilots) if(p.peer>=0) send_(p.peer,message);
 }
 void Game::receive(int peer,const std::string& text) {

@@ -1,6 +1,7 @@
+import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
 import { shipPosition, clipCamera, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
-import { CrushBody, PressureBurst, fractureVelocities, FuelExplosion } from './damage.js';
+import { createDamageEffects } from './damage-effects.js';
 import { stationModel, spacecraftModel } from './models.js';
 
 export function createScene(canvas) {
@@ -62,81 +63,12 @@ export function createScene(canvas) {
   }
   scene.add(target);
   let dockingCamera=true,lookYaw=0,lookPitch=0,lastNow;
-  const debris=[], explosions=[], dents=[];
-  function resetDamage() {
-    for(const item of [...debris,...explosions]) {scene.remove(item.mesh);item.mesh.geometry.dispose();if(item.effect)item.mesh.material.dispose();}
-    debris.length=0;explosions.length=0;dents.length=0;
-    for(const owner of [own,other,station])for(const part of [...owner.fragments,...(owner.pressurePanels||[])])part.visible=true;
-    station.deform([]);
-  }
-  function detach(owner,parts,energy,velocity) {
-    parts=parts.filter(part=>part.visible);
-    if(!parts.length)return;
-    owner.group.updateMatrixWorld(true);
-    const velocities=fractureVelocities(parts.length,2,energy*0.8);
-    parts.forEach((part,i)=>{
-      const geometry=part.geometry.clone();geometry.computeBoundingBox();geometry.computeBoundingSphere();
-      const center=geometry.boundingBox.getCenter(new THREE.Vector3());geometry.translate(-center.x,-center.y,-center.z);
-      const fragment=new THREE.Mesh(geometry,part.material);fragment.name=part.name+'-fragment';
-      fragment.position.copy(part.localToWorld(center));part.getWorldQuaternion(fragment.quaternion);scene.add(fragment);part.visible=false;
-      const v=new THREE.Vector3(...velocities[i]).add(velocity).add(new THREE.Vector3().crossVectors(owner.angularVelocity||new THREE.Vector3(),fragment.position.clone().sub(owner.group.position)));
-      debris.push({mesh:fragment,velocity:v,spin:new THREE.Vector3(0.3,0.5,-0.2).normalize().multiplyScalar(Math.sqrt(0.4*energy/(parts.length*2*Math.max(0.1,geometry.boundingSphere?.radius**2||1))))});
-    });
-  }
-  function explode(owner,mass,point,velocity) {
-    if(!(mass>0))return;
-    const effect=new FuelExplosion(mass/2.43564,mass*1.43564/2.43564);
-    const parts=owner.fragments.filter(part=>{
-      part.geometry.computeBoundingSphere();
-      return (part.userData.tank!==undefined||owner!==station)&&owner.group.localToWorld(part.geometry.boundingSphere.center.clone()).distanceTo(point)<3;
-    });
-    detach(owner,parts,effect.fragmentEnergy,velocity);
-    const material=new THREE.MeshBasicMaterial({color:0xffc984,transparent:true,opacity:0.8,depthWrite:false,blending:THREE.AdditiveBlending});
-    const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,24,16),material);mesh.name='propellant-flash';mesh.position.copy(point);scene.add(mesh);
-    explosions.push({mesh,effect,age:0,velocity:velocity.clone()});
-  }
-  function damage(ship,state,dt) {
-    const key=`${state[31]}:${state[15]}`;
-    if(state[15]!==2 && ship.body) {ship.body=undefined;ship.burst=undefined;ship.crashKey='';ship.deform(null);}
-    if(state[15]===2&&state[24]>0&&key!==ship.crashKey&&Math.hypot(...state.slice(17,20))>0.5) {
-      if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
-      const damageSpeed=state[32]>=0?Math.min(state[20],Math.sqrt(700/Math.max(1,state[28]))):state[20];
-      ship.body=new CrushBody(2120+state[13]+state[33],damageSpeed,420000,state[28],state[29],state[30]);ship.crashKey=key;ship.fractured=false;
-      ship.normal=new THREE.Vector3(state[17],state[18],-state[19]);
-      ship.point=new THREE.Vector3(state[21],state[22],-state[23]);
-      ship.localNormal=ship.normal.clone().applyQuaternion(quaternion(state).invert());
-      ship.damageDirection(ship.localNormal);
-      const point=station.group.worldToLocal(ship.point.clone().add(station.offset));
-      const normal=ship.normal.clone().applyQuaternion(station.group.quaternion.clone().invert());
-      const hit={point,normal,crush:0};dents.push(hit);ship.dent=hit;
-      explode(ship,state[33],ship.group.position,ship.velocity);
-      explode(station,state[34],ship.point.clone().add(station.offset),station.velocity);
-    }
-    if(ship.body) {
-      ship.body.time=state[24];
-      if(ship.body.permanentCrush>0.25&&!ship.burst) ship.burst=new PressureBurst();
-      if(ship.burst) ship.burst.advance(dt);
-      ship.deform(ship.body,ship.burst);
-      if(ship.burst?.distance>=0.12 && ship.pressurePanels.some(part=>part.visible)) {
-        const start=debris.length;
-        detach(ship,ship.pressurePanels,0,ship.velocity);
-        debris.slice(start).forEach((item,i)=>item.velocity.add(new THREE.Vector3((i?1:-1)*ship.burst.panelSpeed,0,0).applyQuaternion(ship.group.quaternion)));
-      }
-      ship.dent.crush=ship.body.stationCrush;
-      if(ship.body.capsuleCrush>0.2&&!ship.fractured) {
-        ship.fractured=true;
-        const eligible=ship.fragments.filter(part=>{
-          part.geometry.computeBoundingSphere();return part.geometry.boundingSphere.center.dot(ship.localNormal)<0;
-        });
-        detach(ship,eligible,ship.body.deformationEnergy*0.01,ship.velocity);
-      }
-    }
-  }
+  const damageEffects=createDamageEffects(scene,station,[own,other]);
   const look=new THREE.Quaternion();
   const inset=document.getElementById('side-view');
   const marker=document.getElementById('port-marker');
   const velocityMarker=document.getElementById('velocity-marker');
-  const quaternion=s=>new THREE.Quaternion(-s[7],-s[8],s[9],s[6]);
+  const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
   function place(ship,s,slot) {ship.group.position.set(...shipPosition(s,slot));ship.group.quaternion.copy(quaternion(s));}
   function resize() {
     renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
@@ -150,6 +82,7 @@ export function createScene(canvas) {
   }
   return {
     ready,
+    resetSimulation() {damageEffects.reset();},
     resetCamera() {lookYaw=0;lookPitch=0;look.identity();return dockingCamera;},
     impactView() {dockingCamera=false;lookYaw=-0.65;lookPitch=0.15;look.setFromEuler(new THREE.Euler(lookPitch,lookYaw,0,'YXZ'));},
     moveCamera(dx,dy) {
@@ -160,41 +93,35 @@ export function createScene(canvas) {
     toggleCamera() {dockingCamera=!dockingCamera;this.resetCamera();return dockingCamera;},
     render(state,opponent,slot,active,commands,now,stationState=[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],thermal={altitude:400000,heat:0,airspeed:0}) {
       const dt=lastNow===undefined?0:Math.max(0,Math.min(0.1,(now-lastNow)/1000));lastNow=now;
-      const stationOffset=new THREE.Vector3(stationState[0],stationState[1],-stationState[2]);
-      const stationQ=new THREE.Quaternion(-stationState[7],-stationState[8],stationState[9],stationState[6]);
+      const stationOffset=new THREE.Vector3(stationState[Station.x],stationState[Station.y],-stationState[Station.z]);
+      const stationQ=new THREE.Quaternion(-stationState[Station.qx],-stationState[Station.qy],stationState[Station.qz],stationState[Station.qw]);
       const stationPivot=new THREE.Vector3(0,0,-13);
       station.group.quaternion.copy(stationQ);
       station.group.position.copy(stationOffset).add(stationPivot).sub(stationPivot.clone().applyQuaternion(stationQ));
       station.group.updateMatrixWorld(true);
-      station.angularVelocity=new THREE.Vector3(-stationState[10],-stationState[11],stationState[12]).applyQuaternion(stationQ);station.offset=stationOffset;station.velocity=new THREE.Vector3(stationState[3],stationState[4],-stationState[5]);
+      station.angularVelocity=new THREE.Vector3(-stationState[Station.wx],-stationState[Station.wy],stationState[Station.wz]).applyQuaternion(stationQ);station.centerOfMass=stationOffset.clone().add(stationPivot);station.offset=stationOffset;station.velocity=new THREE.Vector3(stationState[Station.vx],stationState[Station.vy],-stationState[Station.vz]);
       document.getElementById('station-motion').textContent=`STATION SPIN ${(Math.hypot(...stationState.slice(10,13))*180/Math.PI).toFixed(5)} deg/s · RECOIL ${Math.hypot(...stationState.slice(3,6)).toFixed(4)} m/s`;
       const portX=slot?18:-18;
       target.visible=false;
-      plasma.visible=active&&thermal.altitude<120000&&thermal.heat>20000&&state[15]!==4;
+      plasma.visible=active&&thermal.altitude<120000&&thermal.heat>20000&&state[Flight.status]!==4;
       canvas.dataset.plasma=String(plasma.visible);
       if (active&&state) {
-        if(!state[15]&&own.body)resetDamage();
         place(own,state,slot);own.group.position.add(stationOffset);own.group.visible=!dockingCamera;
-        own.velocity=new THREE.Vector3(state[3],state[4],-state[5]).add(station.velocity);own.angularVelocity=new THREE.Vector3(-state[10],-state[11],state[12]).applyQuaternion(quaternion(state)).add(new THREE.Vector3(meanMotion,0,0));
+        own.velocity=new THREE.Vector3(state[Flight.vx],state[Flight.vy],-state[Flight.vz]).add(station.velocity);own.angularVelocity=new THREE.Vector3(-state[Flight.wx],-state[Flight.wy],state[Flight.wz]).applyQuaternion(quaternion(state)).add(new THREE.Vector3(meanMotion,0,0));
         const rate=meanMotion-7.2921159e-5;
-        const airflow=new THREE.Vector3(state[3],state[4]-rate*state[2],-state[5]-rate*(6771000+state[1])).normalize();
+        const airflow=new THREE.Vector3(state[Flight.vx],state[Flight.vy]-rate*state[Flight.z],-state[Flight.vz]-rate*(6771000+state[Flight.y])).normalize();
         plasma.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),airflow);
         plasma.position.copy(own.group.position).addScaledVector(airflow,-1);
         plasma.scale.set(1.8,1.8,3.5);
         plasma.material.uniforms.strength.value=THREE.MathUtils.clamp(Math.log10(Math.max(1,thermal.heat/20000))/2,0,1);
         own.plumes.forEach((plume,i)=>{plume.visible=firing(thrusters[i],commands,state);});
-        if(opponent) {place(other,opponent,1-slot);other.group.position.add(stationOffset);other.group.visible=true;other.velocity=new THREE.Vector3(opponent[3],opponent[4],-opponent[5]).add(station.velocity);} else other.group.visible=false;
-        damage(own,state,dt);
-        if(opponent) damage(other,opponent,dt);
-        else if(other.body) {other.body=undefined;other.burst=undefined;other.crashKey='';other.deform(null);}
+        if(opponent) {place(other,opponent,1-slot);other.group.position.add(stationOffset);other.group.visible=true;other.angularVelocity=new THREE.Vector3(-opponent[Flight.wx],-opponent[Flight.wy],opponent[Flight.wz]).applyQuaternion(quaternion(opponent)).add(new THREE.Vector3(meanMotion,0,0));other.velocity=new THREE.Vector3(opponent[Flight.vx],opponent[Flight.vy],-opponent[Flight.vz]).add(station.velocity);} else other.group.visible=false;
+        damageEffects.update([state,opponent],stationState,dt);
         const body=own.body;
-        station.deform(dents);
-        for(let panel=0;panel<8;panel++)if(stationState[13]&(1<<panel))
-          detach(station,station.fragments.filter(part=>part.userData.panel===panel),350,station.velocity);
         const q=quaternion(state), origin=own.group.position.clone();
         const offset=new THREE.Vector3(0,dockingCamera?0:4,dockingCamera?-2.65:13);
         if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
-        camera.position.set(...clipCamera(station.group.worldToLocal(origin.clone()).toArray(),station.group.worldToLocal(origin.clone().add(offset)).toArray(),station.colliders.filter(box=>box.panel===undefined||!(stationState[13]&(1<<box.panel)))));
+        camera.position.set(...clipCamera(station.group.worldToLocal(origin.clone()).toArray(),station.group.worldToLocal(origin.clone().add(offset)).toArray(),station.colliders.filter(box=>box.panel===undefined||!(stationState[Station.brokenPanels]&(1<<box.panel)))));
         station.group.localToWorld(camera.position);
         camera.up.set(0,1,0);
         if(dockingCamera) camera.up.applyQuaternion(q);
@@ -204,9 +131,9 @@ export function createScene(canvas) {
         const indicators=dockingIndicators(guide), color=indicators.ready?0x96e4b2:!indicators.speed?0xf28b74:0xedb879;
         target.position.copy(station.group.localToWorld(new THREE.Vector3(portX,0,0.12)));target.quaternion.copy(stationQ);indicatorMaterial.color.setHex(color);
         project(marker,station.group.localToWorld(new THREE.Vector3(portX,0,0)));marker.dataset.state=indicators.ready?'ready':!indicators.speed?'brake':'correct';
-        if(guide[5]>0.005) {
-          const time=Math.min(60,Math.max(0,-guide[2])/guide[5]);
-          project(velocityMarker,station.group.localToWorld(new THREE.Vector3(portX+guide[0]+guide[3]*time,guide[1]+guide[4]*time,0.15)));
+        if(guide[Flight.vz]>0.005) {
+          const time=Math.min(60,Math.max(0,-guide[Flight.z])/guide[Flight.vz]);
+          project(velocityMarker,station.group.localToWorld(new THREE.Vector3(portX+guide[Flight.x]+guide[Flight.vx]*time,guide[Flight.y]+guide[Flight.vy]*time,0.15)));
         } else velocityMarker.hidden=true;
         canvas.dataset.damage=body?'crushing':'none';
         if(body) document.getElementById('impact').textContent=`IMPACT ${(body.initialEnergy/1000).toFixed(2)} kJ · CRUSH ${(body.permanentCrush*100).toFixed(1)} cm · PORT ${(body.stationCrush*100).toFixed(1)} cm${own.burst?' · HULL RUPTURE '+(own.burst.pressure/1000).toFixed(1)+' kPa':''}`;
@@ -217,18 +144,12 @@ export function createScene(canvas) {
         camera.position.set(65+Math.sin(now/12000)*4,25,90);camera.up.set(0,1,0);camera.lookAt(-10,0,-8);
         marker.hidden=true;velocityMarker.hidden=true;
       }
-      for(const item of debris) {item.mesh.position.addScaledVector(item.velocity,dt);item.mesh.rotateOnWorldAxis(item.spin.clone().normalize(),item.spin.length()*dt);}
-      for(const item of explosions) {
-        item.age+=dt;item.mesh.position.addScaledVector(item.velocity,dt);
-        item.mesh.scale.setScalar(item.effect.radius(item.age));
-        item.mesh.material.opacity=Math.min(0.95,item.effect.energy/1e7/(1+item.effect.radius(item.age)**2))*Math.exp(-item.age/0.1);
-        item.mesh.visible=item.age<1;
-      }
-      canvas.dataset.fragments=String(debris.length);
-      canvas.dataset.explosions=String(explosions.length);
+      const counts=damageEffects.advance(dt);
+      canvas.dataset.fragments=String(counts.fragments);
+      canvas.dataset.explosions=String(counts.explosions);
       renderer.setScissorTest(false);renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();
       skyCamera.position.copy(camera.position).multiplyScalar(0.001);skyCamera.quaternion.copy(camera.quaternion);
-      const orbitTime=state?.[14]||0;
+      const orbitTime=state?.[Flight.elapsed]||0;
       sky.backgroundRotation.x=orbitTime*meanMotion;
       const sunlight=sunDirection.clone().applyAxisAngle(new THREE.Vector3(1,0,0),orbitTime*meanMotion);
       for(const world of [scene,sky])for(const light of world.children)if(light.isDirectionalLight)light.position.copy(sunlight);
@@ -236,7 +157,7 @@ export function createScene(canvas) {
       if(earth)earth.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),orbitTime*(meanMotion-7.2921159e-5)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),-Math.PI/2));
       renderer.render(sky,skyCamera);renderer.clearDepth();renderer.render(scene,camera);
       if(active&&inset&&inset.getBoundingClientRect().width>0) {
-        const rect=inset.getBoundingClientRect(), range=thermal.altitude<150000?16:Math.max(12,Math.abs(state[2])+11), aspect=rect.width/rect.height;
+        const rect=inset.getBoundingClientRect(), range=thermal.altitude<150000?16:Math.max(12,Math.abs(state[Flight.z])+11), aspect=rect.width/rect.height;
         sideCamera.left=-range/2;sideCamera.right=range/2;sideCamera.top=range/(2*aspect);sideCamera.bottom=-range/(2*aspect);sideCamera.updateProjectionMatrix();
         const center=thermal.altitude<150000?own.group.position.clone():own.group.position.clone().add(station.group.localToWorld(new THREE.Vector3(portX,0,0))).multiplyScalar(0.5);
         sideCamera.position.copy(center).add(new THREE.Vector3(-80,12,0));sideCamera.up.set(0,1,0);sideCamera.lookAt(center);
