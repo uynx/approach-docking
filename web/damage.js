@@ -32,7 +32,7 @@ export class CrushBody {
   displacement(z) { return this.capsuleCrush * Math.max(0, Math.min(1, (1.8 - z) / 5)) ** 2; }
   buckle(z, angle) {
     const t = Math.max(0, Math.min(1, (z + 3.2) / 5));
-    return Math.min(0.1, Math.sqrt(this.capsuleCrush * 0.2) / Math.PI) * Math.sin(t * Math.PI * 12) * (1-t) * Math.cos(4*angle);
+    return Math.min(0.45, Math.sqrt(this.capsuleCrush * 0.2)) * Math.sin(t * Math.PI * 8) * (1-t) * Math.cos(4*angle);
   }
   energy() { return 0.5 * this.mass * this.capsuleVelocity ** 2 + 0.5 * this.stationMass * this.stationVelocity ** 2; }
 }

@@ -136,6 +136,7 @@ async function controlledFlight(page) {
       return updateObject.apply(this,args);
     };
     const update=THREE.Camera.prototype.updateMatrixWorld;
+    for(const [i,v] of Object.entries({0:0,1:0,2:-18,3:0,4:0,5:0,6:1,7:0,8:0,9:0,10:Math.sqrt(3.986004418e14/6771000**3),11:0,12:0}))window.physics.restore(Number(i),v);
     window.views=[];
     THREE.Camera.prototype.updateMatrixWorld=function(...args){
       const camera=this;
@@ -262,6 +263,42 @@ test('high-speed crush stays bounded and a later weak hit cannot heal the hull',
   const after=await vertices();
   let difference=0;before.forEach((v,i)=>difference=Math.max(difference,Math.abs(after[i]-v)));
   expect(difference).toBeLessThan(0.03);
+});
+
+test('high-speed contact permanently crushes actual capsule and station vertices',async ({page})=>{
+  await controlledFlight(page);
+  const vertices=()=>page.evaluate(()=>({
+    capsule:window.capsuleObject.children.filter(p=>p.isMesh).flatMap(p=>Array.from(p.geometry.attributes.position.array)),
+    station:window.stationObject.children.filter(p=>p.isMesh).flatMap(p=>Array.from(p.geometry.attributes.position.array))
+  }));
+  const before=await vertices();
+  await pose(page,{2:-0.2,5:10});
+  for(let i=0;i<10;i++)await pose(page,{},100);
+  const after=await vertices();
+  const displacement=(a,b)=>a.reduce((max,v,i)=>Math.max(max,Math.abs(v-b[i])),0);
+  expect(displacement(before.capsule,after.capsule)).toBeGreaterThan(0.5);
+  expect(displacement(before.station,after.station)).toBeGreaterThan(0.05);
+  await pose(page,{},100);
+  const later=await vertices();
+  expect(displacement(after.capsule,later.capsule)).toBeLessThan(0.03);
+});
+
+test('severe contact leaves visible folds in the surviving capsule skin',async ({page})=>{
+  await controlledFlight(page);
+  const skin=()=>page.evaluate(()=>window.capsuleObject.children.filter(p=>p.name==='capsule-hull'&&p.visible).map(p=>Array.from(p.geometry.attributes.position.array)));
+  const before=await skin();
+  await pose(page,{2:-0.2,5:30});
+  for(let i=0;i<10;i++)await pose(page,{},100);
+  const folded=await page.evaluate(original=>{
+    let largest=0;
+    window.capsuleObject.children.filter(p=>p.name==='capsule-hull').forEach((part,j)=>{
+      if(!part.visible)return;
+      const points=part.geometry.attributes.position.array;
+      for(let i=0;i<points.length;i+=3)largest=Math.max(largest,Math.abs(Math.hypot(points[i],points[i+1])-Math.hypot(original[j][i],original[j][i+1])));
+    });
+    return largest;
+  },before);
+  expect(folded).toBeGreaterThan(0.12);
 });
 
 test('solar-cell detail uses filtered texture samples instead of tiny overlapping strips',async ({page})=>{
