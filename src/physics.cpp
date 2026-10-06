@@ -36,8 +36,10 @@ double heat_flux(const State& s) {
 }
 State initial() {
     State s;
-    s.position={0,0,-25};
-    s.omega={mean_motion(),0,0};
+    s.position={2.4,-1.5,-18};
+    const double norm=__builtin_sqrt(1+0.05*0.05+0.08*0.08+0.035*0.035);
+    s.attitude={1/norm,0.05/norm,-0.08/norm,0.035/norm};
+    s.omega=rotate(conjugate(s.attitude),{mean_motion(),0,0});
     return s;
 }
 double alignment(const State& s) {
