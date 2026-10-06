@@ -25,6 +25,7 @@ private:
     };
     struct Room {
         std::array<Pilot,2> pilots;
+        flight::Station station;
         std::string phase="lobby";
         unsigned long start=0, touched=0;
     };

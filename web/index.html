@@ -18,7 +18,7 @@
     <section id="welcome" class="welcome">
       <div class="eyebrow"><span class="live-dot"></span> LOW EARTH ORBIT · 400 KM</div>
       <h1>Dock a<br>spacecraft.</h1>
-      <p class="intro">Dock at the glowing cross, 25 metres ahead.<br>Practice first, then compete with a friend.</p>
+      <p class="intro">Dock at the docking target, 25 metres ahead.<br>Practice first, then compete with a friend.</p>
       <div class="entry-card">
         <label for="callsign">Callsign</label>
         <input id="callsign" maxlength="20" value="Pilot" autocomplete="nickname" spellcheck="false">
@@ -26,6 +26,7 @@
         <div class="join-row"><label class="sr-only" for="join-code">Room code</label><input id="join-code" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false"><button id="join" disabled>Join room</button></div>
         <div class="card-divider"></div>
         <button id="practice" class="practice" disabled>Practice flight <span aria-hidden="true">→</span></button>
+        <button id="entry" class="quiet" disabled>Atmospheric entry practice</button>
         <p class="small">Keyboard + browser. No account needed to fly.</p>
       </div>
       <p class="mission-note">TWO PLAYERS · 15 MINUTES PER APPROACH</p>
@@ -38,6 +39,8 @@
         <div class="metric major"><span>DISTANCE TO PORT</span><strong id="range">25.00</strong><small>m</small></div>
         <div class="metric"><span>CLOSING SPEED</span><strong id="closing">0.000</strong><small>m/s</small></div>
         <div class="metric"><span>OFF CENTRE</span><strong id="offset">0.000</strong><small>m</small></div>
+        <div class="metric"><span>BANK ANGLE</span><strong id="bank">0.0</strong><small>deg</small></div>
+        <div id="entry-telemetry" class="small" hidden></div>
         <div class="metric"><span>SIDEWAYS SPEED</span><strong id="drift">0.000</strong><small>m/s</small></div>
         <details class="flight-details"><summary>Rotation and fuel</summary>
         <div class="metric"><span>ALIGNMENT ERROR</span><strong id="alignment">0.00</strong><small>deg</small></div>
@@ -57,10 +60,17 @@
         <button id="ready" class="primary">Ready to fly</button>
         <button id="leave" class="quiet">Leave flight</button>
       </aside>
+      <div id="docking-aid" data-state="ready">
+        <span id="capture-status">WITHIN CAPTURE LIMITS</span>
+        <div class="cue-row"><span id="cue-speed">SPEED</span><span id="cue-offset">OFFSET</span><span id="cue-drift">DRIFT</span><span id="cue-rotation">ATTITUDE</span></div>
+      </div>
+      <div id="port-marker" class="port-marker" hidden><span>PORT</span></div>
+      <div id="velocity-marker" class="velocity-marker" hidden><span>COAST INTERCEPT</span></div>
+      <aside class="side-panel"><div class="panel-title">SIDE VIEW <span>SYNTHETIC TELEMETRY</span></div><div id="side-view" aria-label="Side view of your spacecraft approaching the port"></div><div id="impact"></div><div id="station-motion"></div><div id="attitude-command">ARROWS TILT · , / . ROLL</div><div class="side-note">PORT ← · BANK WITH , / . · C FOR CHASE VIEW</div></aside>
       <div class="reticle" aria-hidden="true"><span></span><i></i></div>
       <div id="announcement" class="announcement" role="status"></div>
       <div class="flight-bottom">
-        <div class="control-strip"><span><kbd>W</kbd> FORWARD <kbd>S</kbd> BACKWARD</span><span><kbd>A</kbd><kbd>D</kbd> LEFT / RIGHT</span><span><kbd>R</kbd><kbd>F</kbd> UP / DOWN</span><span>ARROWS TURN · <kbd>Q</kbd><kbd>E</kbd> ROLL</span><span>RIGHT MOUSE DRAG TO LOOK</span></div>
+        <div class="control-strip"><span><kbd>W</kbd> FORWARD <kbd>S</kbd> BACKWARD</span><span><kbd>A</kbd><kbd>D</kbd> LEFT / RIGHT</span><span><kbd>R</kbd><kbd>F</kbd> UP / DOWN</span><span>ARROWS TILT · <kbd>,</kbd><kbd>.</kbd> ROLL</span><span>RIGHT MOUSE DRAG TO LOOK</span></div>
         <div class="bottom-actions"><span id="guidance">Hold W briefly to start moving. Use S to slow down.</span><button id="camera" class="quiet" aria-label="Camera">Camera <kbd>C</kbd></button><button id="center-view" class="quiet" aria-label="Center view">Center view <kbd>V</kbd></button><button id="reset-practice" class="quiet" hidden>Reset practice</button></div>
       </div>
     </section>
@@ -75,24 +85,27 @@
   <dialog id="manual">
     <button id="close-manual" class="close" aria-label="Close manual">×</button>
     <div class="eyebrow">FLIGHT MANUAL</div><h2>How to play</h2>
-    <ol><li>Choose Practice flight to learn the controls, or create a room and send its invite link to a friend.</li><li>In a room, both players press Ready to fly. Each ship starts 25 metres from its own port, already lined up.</li><li>Reach the glowing cross slowly. A successful dock beats a failed approach. If both players dock, the higher score wins. You have 15 minutes.</li></ol>
+    <ol><li>Choose Practice flight to learn the controls, or create a room and send its invite link to a friend.</li><li>In a room, both players press Ready to fly. Each ship starts 25 metres from its own port, already lined up.</li><li>Reach the docking target slowly. A successful dock beats a failed approach. If both players dock, the higher score wins. You have 15 minutes.</li></ol>
     <h3>Try W, then S</h3>
     <p>Hold W for one second, then release it. The ship keeps moving. Hold S until the closing speed is near zero, then release it. Holding S longer makes you move away from the station.</p>
     <h3>Your ship keeps moving when you release a key.</h3>
-    <p>Thrust changes velocity. Opposite thrust slows you down. Rotation also persists: counter-rotate to stop turning. There is no automatic braking or attitude hold.</p>
+    <p>Thrust changes velocity. Opposite thrust slows you down. Rotation also persists: counter-rotate to stop turning. There is no automatic braking or attitude hold. Pitch and yaw fire opposing jets near the front and rear of the capsule. Holding an arrow continues the turn through any angle, including a full rotation. Press C to see the capsule tilt in the chase view.</p>
     <div class="manual-grid">
       <div><h3>Translation</h3><p><kbd>W</kbd> forward · <kbd>S</kbd> backward<br><kbd>A</kbd> left · <kbd>D</kbd> right<br><kbd>R</kbd> up · <kbd>F</kbd> down</p></div>
-      <div><h3>Rotation</h3><p>Arrow keys pitch and yaw<br><kbd>Q</kbd> / <kbd>E</kbd> roll<br><kbd>Shift</kbd> 20% pulse duty for fine control</p></div>
+      <div><h3>Rotation</h3><p>Arrow keys tilt the nose up, down, left, and right<br><kbd>,</kbd> / <kbd>.</kbd> roll, or Q / E<br><kbd>Shift</kbd> 20% pulse duty for fine control</p></div>
     </div>
     <h3>Camera</h3>
-    <p>Hold the right mouse button and drag over the flight view to look around. In the chase view, this orbits the camera around your ship. Press V or click Center view to face forward again. Press C to switch views. Moving the camera does not turn the ship. The aiming reticle is hidden while looking away from the forward view.</p>
+    <p>Hold the right mouse button and drag over the flight view to look around. In the chase view, this orbits the camera around your ship. Press V or click Center view to face forward again. Press C to switch views. The chase camera stays level with the station, so you can see the capsule bank. Comma and period rotate the capsule around its forward axis. Apply the opposite control to stop the roll. Moving the camera does not turn the ship. The aiming reticle is hidden while looking away from the forward view.</p>
+    <h3>Docking cues and side view</h3><p>The port bracket marks your target. Green cues are within capture limits; amber cues need correction; red means the closing speed is outside the limit. The diamond predicts where your present sideways velocity would carry you at the port, assuming constant velocity. It is guidance, not an autopilot. The corner view is a synthetic side view drawn from flight telemetry. Bank angle is relative to the station horizon.</p>
     <h3>All capture conditions must be satisfied</h3>
     <ul><li>Within 0.25 m sideways and 0.10 m along the approach axis.</li><li>Alignment error no more than 3 degrees.</li><li>Closing speed between 0 and 0.15 m/s; lateral speed no more than 0.05 m/s.</li><li>Rotation relative to the port no more than 0.5 degrees per second.</li></ul>
-    <p>Crossing the capture plane outside those limits fails the approach. Flying more than 2 km from the port or exceeding 15 minutes also ends the attempt.</p>
+    <p>Missing the capture envelope lets you continue past the port. Hitting station hardware causes damage and ends scoring, while the wreckage keeps moving. There is no distance boundary. A flight attempt lasts up to 15 minutes.</p>
     <h3>Scoring, out of 1,000</h3>
     <p>Precision earns up to 600 points, fuel remaining up to 300, and time remaining up to 100. Precision averages four normalized errors: sideways distance / 0.25 m, alignment / 3 degrees, total speed / 0.16 m/s, and rotation rate / 0.5 degrees per second. Smaller errors earn more points. Failed approaches score zero.</p>
     <h3>Near the port</h3><p>Keep closing speed below 0.15 m/s. Tap A / D and R / F to correct sideways drift. Hold Shift for gentler thrust. Release Shift when you need full braking. Press C to switch between the docking view and a view behind the ship. Ships do not collide with each other.</p>
-    <p class="small">Prototype physics: rigid body, ideal thrusters, finite fuel, central Earth gravity and gravity-gradient torque. Capture uses a geometric envelope. Flexible docking hardware, plume interaction, and fuel slosh are not modeled.</p>
+    <h3>Crashes and entry</h3><p>Collisions transfer momentum and torque to both the capsule and station. Off-center impacts make both turn. Hulls crumple permanently; hard hits can tear skin and solar panels into pieces. Fragile panels absorb limited energy before breaking, so a fast capsule can pass through their wreckage. Damaged propellant bays can release fuel and oxidizer in a brief expanding flash. Cabin pressure pushes broken panels outward.</p>
+    <p>Choose Atmospheric entry practice to start a descending trajectory at 90 km. Air drag slows the capsule and atmospheric heating produces the glow around it. Watch altitude, airspeed and heating in the instruments. Earth rotates and the orbital frame changes at their physical rates.</p>
+    <p class="small">Collision impulses include both bodies' mass and rotational inertia. Deformation, fracture thresholds, combustion and heating visuals use simplified models with assumed material properties. They are not validated predictions of a real vehicle. Debris does not collide with other objects, and heat-shield ablation is not simulated.</p>
   </dialog>
 </body>
 </html>

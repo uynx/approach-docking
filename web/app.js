@@ -1,12 +1,13 @@
 import { createScene } from './scene.js';
+import { dockingIndicators } from './flight-view.js';
 
 const $ = id => document.getElementById(id);
 let sim, scene, socket, snapshot, slot = 0, practice = false, active = false;
 let sequence = 0, room = '', lastFrame = performance.now(), accumulator = 0, toastTimer;
 let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotAt = 0;
-let debriefKey = '';
+let debriefKey = '', entryPractice = false;
 const held = new Set();
-const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired'];
+const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired', 'Ground impact'];
 function toast(message, persistent = false) {
   $('toast').textContent = message; $('toast').hidden = false;
   clearTimeout(toastTimer);
@@ -17,13 +18,13 @@ function controls() {
   const down = key => held.has(key) ? 1 : 0;
   const amount = held.has('ShiftLeft') || held.has('ShiftRight') ? 0.2 : 1;
   return [down('KeyD') - down('KeyA'), down('KeyR') - down('KeyF'), down('KeyW') - down('KeyS'),
-    down('ArrowDown') - down('ArrowUp'), down('ArrowRight') - down('ArrowLeft'), down('KeyQ') - down('KeyE')].map(v => v * amount);
+    down('ArrowDown') - down('ArrowUp'), down('ArrowRight') - down('ArrowLeft'), Math.max(down('KeyQ'), down('Comma')) - Math.max(down('KeyE'), down('Period'))].map(v => v * amount);
 }
 function send(message) {
   if (socket?.readyState === WebSocket.OPEN) { socket.send(JSON.stringify(message)); return true; }
   toast('Connecting to the server. Try again in a moment.'); return false;
 }
-function current() { return Array.from({ length: 17 }, (_, i) => sim.component(i)); }
+function current() { return Array.from({ length: 35 }, (_, i) => sim.component(i)); }
 function restore(state) { state.forEach((value, i) => sim.restore(i, value)); accumulator = 0; }
 function showFlight() {
   resetCamera();
@@ -37,6 +38,7 @@ function showResults(pilots) {
   const key = `${practice ? 'practice' : snapshot.phase}:${mine.state[15]}`;
   if (debriefKey === key) return;
   debriefKey = key;
+  if(mine.state[15]===2||mine.state[15]===4) {scene.impactView();$('camera-mode').textContent='CHASE CAM';}
   $('result-title').textContent = mine.state[15] === 1 ? 'Docked' : 'Approach failed';
   const successful = pilots.filter(p => p.state[15] === 1);
   if (practice) $('result-description').textContent = 'Practice complete. Reset to fly another approach.';
@@ -52,6 +54,7 @@ function showResults(pilots) {
   }));
   $('rematch').textContent = practice ? 'Try again' : 'Ready for rematch';
   $('rematch').disabled = !practice && snapshot.phase !== 'finished';
+  $('results').dataset.crash = String(mine.state[15] === 2 || mine.state[15] === 4);
   $('results').hidden = false;
 }
 function stateReceived(message) {
@@ -61,8 +64,9 @@ function stateReceived(message) {
   const mine = message.pilots[slot], opponent = message.pilots[1 - slot];
   $('pilot-name').textContent = mine.name;
   restore(mine.state);
+  message.station?.forEach((v,i)=>sim.restore_station(i,v));
   if (message.phase === 'flight' && !mine.state[15]) {
-    for (let i = 0; i < Math.min(12, Math.floor(latency / 2000 * 120)); i++) sim.step_flight(...controls());
+    for (let i = 0; i < Math.min(12, Math.floor(latency / 2000 * 120)); i++) sim.step_flight(...controls(),slot);
   }
   $('mode').textContent = message.phase.toUpperCase();
   $('opponent-name').textContent = opponent.name || 'Waiting for a second pilot';
@@ -113,22 +117,27 @@ function connect() {
     reconnectTimer = setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 8000);
   });
 }
-function startPractice() {
+function startPractice(entry = entryPractice) {
+  entryPractice=entry;
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(); accumulator = 0;
-  $('results').hidden = true; $('mode').textContent = 'PRACTICE'; $('room-code').textContent = 'LOCAL';
+  if(entry) {
+    sim.restore(1,-310000);sim.restore(4,-300);sim.restore(5,-600);sim.restore(6,0);sim.restore(7,1);
+    scene.impactView();
+  }
+  $('results').hidden = true; $('mode').textContent = entry?'ATMOSPHERIC ENTRY':'PRACTICE'; $('room-code').textContent = 'LOCAL';
   $('opponent-name').textContent = 'Solo practice'; $('opponent-range').textContent = '—';
   $('opponent-status').textContent = 'Start with W and S. You are already lined up with the port. Reset whenever you need to.';
   $('announcement').textContent = ''; showFlight();
 }
 function ready() { debriefKey = ''; $('results').hidden = true; held.clear(); send({ type: 'ready' }); }
-function resetCamera() { scene.resetCamera(); document.querySelector('.reticle').hidden = false; }
+function resetCamera() { $('camera-mode').textContent = scene.resetCamera() ? 'DOCKING CAM' : 'CHASE CAM'; document.querySelector('.reticle').hidden = false; }
 function toggleCamera() {
   $('camera-mode').textContent = scene.toggleCamera() ? 'DOCKING CAM' : 'CHASE CAM';
   document.querySelector('.reticle').hidden = false;
 }
 $('create').onclick = () => send({ type: 'create', name: $('callsign').value.trim() });
 $('join').onclick = () => send({ type: 'join', room: $('join-code').value.trim().toUpperCase(), name: $('callsign').value.trim() });
-$('practice').onclick = startPractice; $('reset-practice').onclick = startPractice;
+$('practice').onclick = () => startPractice(false); $('entry').onclick = () => startPractice(true); $('reset-practice').onclick = () => startPractice();
 $('ready').onclick = ready; $('rematch').onclick = () => practice ? startPractice() : ready();
 $('close-results').onclick = () => { $('results').hidden = true; };
 $('leave').onclick = () => { if (!practice) send({ type: 'leave' }); sessionStorage.removeItem('approach-session'); location.href = '/'; };
@@ -162,7 +171,7 @@ canvas.addEventListener('pointercancel', stopCameraDrag);
 canvas.addEventListener('lostpointercapture', stopCameraDrag);
 $('help-button').onclick = () => { held.clear(); $('manual').showModal(); };
 $('close-manual').onclick = () => $('manual').close();
-const keys = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
+const keys = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Comma', 'Period', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
 addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement) return;
   if (active && keys.includes(event.code)) { event.preventDefault(); held.add(event.code); }
@@ -173,12 +182,26 @@ addEventListener('keydown', event => {
 addEventListener('keyup', event => held.delete(event.code));
 addEventListener('blur', () => { held.clear(); stopCameraDrag(); });
 document.addEventListener('visibilitychange', () => { held.clear(); accumulator = 0; });
-function instruments(state) {
+function instruments(physical) {
+  const state=physical.map((v,i)=>i<13?sim.guidance_component(i,slot):v);
+  const altitude=sim.flight_altitude(), heat=sim.flight_heat();
+  $('entry-telemetry').hidden=altitude>150000;
+  $('entry-telemetry').textContent=`ALT ${(altitude/1000).toFixed(2)} km · AIR ${(sim.flight_airspeed()/1000).toFixed(2)} km/s · HEATING ${(heat/1000).toFixed(1)} kW/m²`;
+  const indicators = dockingIndicators(state);
+  $('bank').textContent = indicators.roll.toFixed(1);
+  const axes = controls();
+  $('attitude-command').textContent = axes[3] ? (axes[3] < 0 ? 'PITCH UP · TAIL DOWN' : 'PITCH DOWN · TAIL UP') : axes[4] ? (axes[4] > 0 ? 'YAW RIGHT · TAIL LEFT' : 'YAW LEFT · TAIL RIGHT') : axes[5] ? 'ROLL · OPPOSITE KEY TO STOP' : 'ARROWS TILT · , / . ROLL';
+  $('docking-aid').dataset.state = indicators.ready ? 'ready' : !indicators.speed ? 'brake' : 'correct';
+  $('capture-status').textContent = state[15] ? statusText[state[15]].toUpperCase() : indicators.ready ? 'WITHIN CAPTURE LIMITS' : !indicators.speed ? 'CORRECT CLOSING SPEED' : 'CORRECT ALIGNMENT / DRIFT';
+  for (const id of ['speed', 'offset', 'drift', 'rotation']) {
+    $('cue-' + id).dataset.good = String(indicators[id]);
+    $('cue-' + id).setAttribute('aria-label', id + (indicators[id] ? ' within limit' : ' outside limit'));
+  }
   $('range').textContent = Math.hypot(...state.slice(0, 3)).toFixed(2);
   $('closing').textContent = state[5].toFixed(3); $('offset').textContent = Math.hypot(state[0], state[1]).toFixed(3);
   const drift = Math.hypot(state[3], state[4]);
   $('drift').textContent = drift.toFixed(3);
-  const alignment = sim.flight_alignment(), spin = sim.flight_spin();
+  const alignment = indicators.alignment, spin = indicators.spin;
   $('alignment').textContent = alignment.toFixed(2); $('spin').textContent = spin.toFixed(2);
   $('fuel').textContent = state[13].toFixed(2); $('fuel-bar').value = state[13];
   const seconds = Math.floor(state[14]); $('clock').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} / 15:00`;
@@ -201,23 +224,24 @@ function instruments(state) {
 function frame(now) {
   const delta = Math.min(0.1, (now - lastFrame) / 1000); lastFrame = now;
   const axes = controls();
-  if (active && (practice || snapshot?.phase === 'flight') && (practice || performance.now() - lastSnapshotAt < 1000)) {
+  if (active && (practice || snapshot?.phase === 'flight' || snapshot?.phase === 'finished') && (practice || performance.now() - lastSnapshotAt < 1000)) {
     accumulator += delta;
-    while (accumulator >= 1 / 120) { sim.step_flight(...axes); if (practice) sim.judge_flight(); accumulator -= 1 / 120; }
+    while (accumulator >= 1 / 120) { sim.step_flight(...axes,slot); if (practice) sim.judge_flight(slot); accumulator -= 1 / 120; }
   }
   const state = current();
   if (active) instruments(state);
   if (practice && state[15]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }]);
-  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now);
+  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now, Array.from({length:15},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
   requestAnimationFrame(frame);
 }
 try {
   scene = createScene($('viewport'));
+  await scene.ready;
   const response = await fetch('/physics.wasm');
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
-  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos } });
+  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });
   sim = instance.exports; sim.reset_flight();
-  $('practice').disabled = false;
+  $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';
   connect(); requestAnimationFrame(frame);
   setInterval(() => {

@@ -24,7 +24,8 @@ std::string pilot_name(const json::object& obj) {
 json::array state_array(const flight::State& s) {
     return {s.position.x,s.position.y,s.position.z,s.velocity.x,s.velocity.y,s.velocity.z,
         s.attitude.w,s.attitude.x,s.attitude.y,s.attitude.z,s.omega.x,s.omega.y,s.omega.z,
-        s.fuel,s.elapsed,s.status,s.score};
+        s.fuel,s.elapsed,s.status,s.score,s.impact_normal.x,s.impact_normal.y,s.impact_normal.z,
+        s.impact_speed,s.impact_point.x,s.impact_point.y,s.impact_point.z,s.impact_age,s.impact_arm.x,s.impact_arm.y,s.impact_arm.z,s.impact_mass,s.crush_force,s.station_share,s.impact_sequence,s.impact_part,s.burned_fuel,s.station_burned_fuel};
 }
 }
 void Game::error(int peer,const std::string& message) {
@@ -38,7 +39,10 @@ void Game::broadcast(const std::string& code,const Room& room) {
         {"spin",flight::relative_spin(p.state)}});
     const json::object message{{"type","state"},{"room",code},{"phase",room.phase},
         {"tick",tick_},{"countdown",room.start>tick_ ? (room.start-tick_)/120.0 : 0},
-        {"pilots",pilots}};
+        {"pilots",pilots},{"station",json::array{room.station.position.x,room.station.position.y,room.station.position.z,
+            room.station.velocity.x,room.station.velocity.y,room.station.velocity.z,
+            room.station.attitude.w,room.station.attitude.x,room.station.attitude.y,room.station.attitude.z,
+            room.station.omega.x,room.station.omega.y,room.station.omega.z,room.station.broken_panels,room.station.ruptured_tanks}}};
     for(const auto& p:room.pilots) if(p.peer>=0) send_(p.peer,message);
 }
 void Game::receive(int peer,const std::string& text) {
@@ -95,7 +99,7 @@ void Game::receive(int peer,const std::string& text) {
     }
     if(type=="ready") {
         if(room.phase=="finished") {
-            room.phase="lobby";
+            room.phase="lobby"; room.station={};
             for(auto& pilot:room.pilots) {
                 if(pilot.peer<0 && pilot.token.empty()) pilot=Pilot{};
                 pilot.ready=false; pilot.state=flight::initial(); pilot.controls={};
@@ -151,11 +155,16 @@ void Game::tick() {
             it=rooms_.erase(it); continue;
         }
         if(room.phase=="countdown" && tick_>=room.start) room.phase="flight";
-        if(room.phase=="flight") {
+        if(room.phase=="flight" || room.phase=="finished") {
+            flight::State states[]={room.pilots[0].state,room.pilots[1].state};
+            flight::Controls controls[2];
             for(auto& p:room.pilots) {
                 if(tick_-p.last_input>60) p.controls={};
-                flight::advance(p.state,p.controls,flight::step_seconds);
-                flight::judge(p.state);
+                controls[&p-room.pilots.data()]=p.controls;
+            }
+            flight::advance_system(states,controls,2,room.station,flight::step_seconds);
+            for(int i=0;i<2;++i) {
+                flight::judge(states[i],i,room.station);room.pilots[i].state=states[i];
             }
             if(room.pilots[0].state.status && room.pilots[1].state.status) {
                 room.phase="finished";

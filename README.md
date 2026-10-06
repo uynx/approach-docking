@@ -68,11 +68,115 @@ can take time to load. See [Render's free-service limits](https://render.com/doc
 C++17 physics is compiled both natively and to freestanding WebAssembly. It uses
 120 Hz RK4 integration, quaternion attitude, rigid-body inertia, finite fuel,
 paired thrusters, differential Earth gravity, and rotating-frame terms. A
-geometric capture envelope determines docking; crossing the capture plane
-outside its limits fails the attempt. Fuel slosh, flexible docking hardware,
-and ship-to-ship collisions are not simulated.
+geometric capture envelope determines docking. Missing it allows continued flight;
+contact with station hardware causes a crash. The target, guidance and captured
+ship follow the station as it translates and rotates.
 
 The server accepts bounded control inputs with increasing sequence numbers. It
 computes positions, fuel, outcomes, and scores itself. Client-submitted positions
 and scores are not accepted. This prevents fabricated flight states, but does
 not prevent someone automating valid control inputs.
+
+
+## Controls and views
+
+W/S translate forward/back, A/D left/right, R/F up/down. Arrow keys pitch and yaw;
+comma/period or Q/E roll. Opposite thrust stops a turn. Shift selects 20% pulse
+duty. Visible thrusters use the same force pairs and 50 ms pulse timing as the
+C++ dynamics. Right mouse drag moves the camera, C switches docking/chase view,
+and V recenters. A synthetic side view stays visible during docking and crashes.
+Colored cues report capture limits and a diamond predicts a constant-velocity
+intercept. Station recoil and angular speed appear below the inset.
+
+## Collision and damage model
+
+Contact samples sweep through the station's cylinder, cone, box and torus
+proxies. The earliest contact determines the normal and lever arms. An inelastic
+impulse includes inverse mass and rotational inertia for both bodies. The capsule
+has a 2,120 kg dry mass plus remaining propellant; the station mass is 420,000 kg.
+
+J = (1 + e) vₙ / k. The impulse equals one plus restitution, times incoming normal
+contact speed, divided by effective inverse mass. Here k includes both bodies'
+rotational response at the contact. Δp = ±Jn and ΔL = r × Δp: linear momentum
+changes by opposing impulses, and angular momentum changes by the lever arm
+cross the impulse. Restitution e is 0.08. Off-center strikes can tumble both
+bodies; the station's larger inertia produces slower rotation.
+
+Permanent visual crushing uses dissipated contact energy and bounded compression.
+The combined crush distance is capped at 1.5 m, with material-dependent sharing
+between the two objects. Earlier dents persist across subsequent impacts.
+Assumed yield forces are 80 kN for docking collars, 20 kN for module shells and
+2 kN for solar panels. A solar-wing fracture consumes at most 700 J, including
+350 J reserved for fragment motion. A fast capsule can therefore tear through a
+panel. Torn panels are removed from collision geometry. Actual mesh sections
+leave the solar wings, capsule skin and damaged tanks. They inherit parent
+translation and rotational velocity. These fracture thresholds are game model
+parameters, not measurements of a particular spacecraft.
+
+Cabin rupture spends stored ideal-gas energy on opposing hatch panels and venting.
+Vacuum does not crush a pressurized cabin inward. Structural impacts produce dents;
+internal pressure ejects broken panels outward.
+
+## Propellant bursts
+
+Only sufficiently energetic hits in the capsule's aft propellant bay or the
+station's paired tanks can trigger combustion. Capsule fuel is consumed once;
+each station tank pair has a persistent rupture flag and an assumed 60 kg load.
+The hypothetical propellants are hydrazine and nitrogen tetroxide. Ideal reaction
+energy is approximately 6.72 MJ per kilogram of stoichiometric mixture, computed
+from NIST formation enthalpies. There is no combustion without both reactants.
+
+2 N₂H₄ + N₂O₄ → 3 N₂ + 4 H₂O. Two hydrazine molecules react with one nitrogen
+tetroxide molecule to form three nitrogen molecules and four water molecules.
+The model partitions energy into expanding gas, heat and fragments. The hot cloud
+expands and fades rapidly in vacuum. A rendered flash approximates camera exposure.
+Tank shells and nearby capsule skin break away. There is no air shockwave in space.
+
+Sources: [NIST hydrazine](https://webbook.nist.gov/cgi/cbook.cgi?ID=C302012&Mask=2),
+[NIST nitrogen tetroxide](https://webbook.nist.gov/cgi/cbook.cgi?ID=C10544726&Mask=2),
+[NIST water vapor](https://webbook.nist.gov/cgi/cbook.cgi?ID=C7732185&Mask=1).
+
+## Earth and atmospheric entry
+
+Earth has its actual radius of 6,371 km and a nominal 400 km reference orbit.
+The orbital period follows Earth's gravitational parameter, approximately
+92.4 minutes. The surface moves with the orbital frame and sidereal Earth rotation.
+Earth renders in a separate kilometer-scale pass to preserve nearby depth precision.
+The old 2 km flight boundary is removed.
+
+Atmospheric entry practice starts at 90 km with a descending trajectory and the
+heat shield forward. The physics applies central gravity and aerodynamic drag
+relative to a co-rotating atmosphere. Density is log-interpolated from the
+[US Standard Atmosphere 1976 tables](https://www.pdas.com/bigtables.html), with an
+exponential continuation above 400 km. Assumed drag coefficient is 1.5 and reference
+area is a circle of radius 1.35 m. Ground contact ends the attempt at Earth's surface.
+
+D = ½ρCᴅAv². Drag equals half the density times drag coefficient, area and airspeed
+squared, opposing air-relative velocity. q = 0.000174153 √(ρ/R) v³. Stagnation heat
+flux equals the Sutton–Graves coefficient times the square root of density divided
+by nose radius, times airspeed cubed. Heating drives the visible plasma envelope;
+it is not a fuel fire. The HUD reports altitude, airspeed and heat flux.
+[Sutton–Graves coefficient source](https://ntrs.nasa.gov/api/citations/20060004824/downloads/20060004824.pdf).
+
+## Imagery credits
+
+- Earth: NASA Earth Observatory and NASA/Goddard SVS, Amy Moran and Jesse Allen,
+  [Blue Marble 2015](https://svs.gsfc.nasa.gov/30763/). The VIIRS global mosaic was
+  resized from the supplied 10,800 × 5,400 TIFF to an 8,192 × 4,096 JPEG.
+- Stars: NASA/Goddard SVS, Ernie Wright and Tom Bridgman,
+  [Deep Star Maps](https://svs.gsfc.nasa.gov/3895/), 8,192 × 4,096. The map uses
+  observed Bright Star, Tycho-2 and UCAC3 catalog positions, brightness and color.
+- Solar cells use a mipmapped anisotropic texture to filter fine busbar detail
+  at distance. Small geometric grid strips have been removed.
+
+## Limits
+
+This is a simplified interactive physics model, not a validated structural or
+combustion simulation. Collision proxies retain their original shape except for
+removed solar panels and ruptured station tanks. Deformation is analytic, not a
+finite-element solution. Visual debris does not change parent inertia or perform
+secondary collisions, orbital propagation or aerodynamic interaction. Fuel mass
+loss, fragment recoil and explosion coupling are approximations. Gas mixing,
+blast propagation through structures, ablation, thermal failure, fuel slosh and
+flexible docking mechanisms are not resolved. Ships do not collide with each
+other. Station recoil is integrated around the original reference orbit.

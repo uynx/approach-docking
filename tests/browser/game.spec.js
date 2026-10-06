@@ -82,6 +82,7 @@ for (const view of ['DOCKING CAM', 'CHASE CAM']) {
 }
 
 test('two browser sessions join a room and share a countdown and flight', async ({ browser }) => {
+  test.setTimeout(60000);
   const a = await browser.newContext(), b = await browser.newContext();
   const one = await a.newPage(), two = await b.newPage();
   await one.goto('/'); await two.goto('/');
@@ -107,4 +108,177 @@ test('two browser sessions join a room and share a countdown and flight', async 
   await one.getByRole('button', { name: 'Leave flight' }).click();
   await expect(two.locator('#opponent-status')).toHaveText('Approach failed');
   await a.close(); await b.close();
+});
+
+test('new flight modules and NASA textures are served with their actual MIME types', async ({ request }) => {
+  for (const [path,type] of [['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg']]) {
+    const response=await request.get('/'+path);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain(type);
+    expect((await response.body()).length).toBeGreaterThan(100);
+  }
+});
+
+async function controlledFlight(page) {
+  await page.addInitScript(() => {
+    window.requestAnimationFrame=callback=>{window.flightFrame=callback;return 1;};
+    const instantiate=WebAssembly.instantiate;
+    WebAssembly.instantiate=async (...args)=>{const result=await instantiate(...args);window.physics=result.instance.exports;return result;};
+  });
+  await page.goto('/');
+  await page.getByRole('button',{name:'Practice flight'}).click();
+  await page.evaluate(async ()=>{
+    const THREE=await import('/vendor/three.module.js');
+    const updateObject=THREE.Object3D.prototype.updateMatrixWorld;
+    THREE.Object3D.prototype.updateMatrixWorld=function(...args){
+      if(this.name==='station')window.stationObject=this;
+      if(this.name==='capsule-'+0x6daaa7)window.capsuleObject=this;
+      return updateObject.apply(this,args);
+    };
+    const update=THREE.Camera.prototype.updateMatrixWorld;
+    window.views=[];
+    THREE.Camera.prototype.updateMatrixWorld=function(...args){
+      const camera=this;
+      window.views.push({type:camera.type,near:camera.near,position:camera.position.toArray(),up:camera.up.toArray(),quaternion:camera.quaternion.toArray()});
+      return update.apply(this,args);
+    };
+    window.frameTime=performance.now();window.flightFrame(window.frameTime);
+  });
+}
+
+async function pose(page, values, advance=0) {
+  return page.evaluate(({values,advance})=>{
+    for(const [index,value] of Object.entries(values)) window.physics.restore(Number(index),value);
+    window.views=[];window.frameTime+=advance;window.flightFrame(window.frameTime);
+    return window.views;
+  },{values,advance});
+}
+
+test('comma and period bank the capsule while the chase camera stays level', async ({page})=>{
+  await controlledFlight(page);
+  await page.getByRole('button',{name:'Camera',exact:true}).click();
+  await page.keyboard.down(',');
+  for(let i=0;i<15;i++) await pose(page,{},100);
+  await page.keyboard.up(',');
+  const bank=Number(await page.locator('#bank').textContent());expect(bank).toBeGreaterThan(1);
+  const views=await pose(page,{});
+  expect(views.find(v=>v.near===0.05).up).toEqual([0,1,0]);
+  expect(views.some(v=>v.type==='OrthographicCamera')).toBe(true);
+  const spinBefore=await page.evaluate(()=>window.physics.component(12));
+  await page.keyboard.down('.');
+  for(let i=0;i<5;i++) await pose(page,{},100);
+  await page.keyboard.up('.');
+  expect(await page.evaluate(()=>window.physics.component(12))).toBeLessThan(spinBefore);
+});
+
+test('close approach preserves camera clearance and cues distinguish speed and offset errors', async ({page})=>{
+  await controlledFlight(page);
+  let views=await pose(page,{2:-0.12,5:0.1});
+  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.25);
+  await expect(page.locator('#docking-aid')).toHaveAttribute('data-state','ready');
+  await pose(page,{5:0.3});
+  await expect(page.locator('#docking-aid')).toHaveAttribute('data-state','brake');
+  await expect(page.locator('#cue-speed')).toHaveAttribute('data-good','false');
+  await pose(page,{5:0.1,0:0.4});
+  await expect(page.locator('#docking-aid')).toHaveAttribute('data-state','correct');
+  await expect(page.locator('#cue-offset')).toHaveAttribute('data-good','false');
+  await page.getByRole('button',{name:'Camera',exact:true}).click();
+  await page.mouse.move(600,400);await page.mouse.down({button:'right'});await page.mouse.move(1380,325);await page.mouse.up({button:'right'});
+  views=await pose(page,{0:0});
+  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.25);
+});
+
+test('an axial impact deforms the hull, leaves the side view visible, and resets cleanly', async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.2,5:3});
+  for(let i=0;i<10;i++) await pose(page,{},100);
+  await expect(page.locator('#viewport')).toHaveAttribute('data-damage','crushing');
+  await expect(page.locator('#impact')).toContainText('kJ');
+  await expect(page.locator('#impact')).not.toContainText('CRUSH 0.0 cm');
+  await expect(page.locator('#side-view')).toBeVisible();
+  const result=await page.locator('#results').boundingBox(), inset=await page.locator('#side-view').boundingBox();
+  expect(result.x+result.width).toBeLessThan(inset.x);
+  await page.getByRole('button',{name:'Try again',exact:true}).click();
+  await pose(page,{});
+  await expect(page.locator('#viewport')).toHaveAttribute('data-damage','none');
+  await expect(page.locator('#impact')).toHaveText('');
+});
+
+test('impact spins the station and changes its rendered orientation',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.2,5:30});
+  for(let i=0;i<20;i++)await pose(page,{},100);
+  const motion=await page.evaluate(()=>Array.from({length:13},(_,i)=>window.physics.station_component(i)));
+  expect(Math.hypot(...motion.slice(10))).toBeGreaterThan(0.00001);
+  expect(Math.hypot(...motion.slice(7,10))).toBeGreaterThan(0.00001);
+  const rendered=await page.evaluate(()=>window.stationObject.quaternion.toArray());
+  expect(rendered[0]).toBeCloseTo(-motion[7],8);
+  expect(rendered[1]).toBeCloseTo(-motion[8],8);
+  expect(rendered[2]).toBeCloseTo(motion[9],8);
+  await expect(page.locator('#station-motion')).not.toContainText('0.00000 deg/s');
+});
+
+test('a high-speed solar-panel strike breaks the actual panel into visible fragments',async ({page})=>{
+  await controlledFlight(page);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await pose(page,{0:8,1:4,2:8,5:50});
+  for(let i=0;i<8;i++)await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.station_component(13))).toBeGreaterThan(0);
+  expect(Number(await page.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThanOrEqual(24);
+  const actual=await page.evaluate(()=>({hidden:window.stationObject.children.filter(p=>p.name==='station-panel'&&!p.visible).length,
+    detached:window.stationObject.parent.children.filter(p=>p.name==='station-panel-fragment').length}));
+  expect(actual.hidden).toBeGreaterThanOrEqual(24);expect(actual.detached).toBe(actual.hidden);
+  expect(await page.evaluate(()=>window.physics.component(5))).toBeGreaterThan(40);
+  expect(errors).toEqual([]);
+});
+
+test('severe capsule impact releases actual hull sections and resets fragments',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.2,5:30});
+  for(let i=0;i<10;i++)await pose(page,{},100);
+  expect(Number(await page.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThan(0);
+  await page.getByRole('button',{name:'Try again',exact:true}).click();await pose(page,{});
+  await expect(page.locator('#viewport')).toHaveAttribute('data-fragments','0');
+});
+
+test('ruptured capsule and station tanks each produce a fuel explosion',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{15:2,17:-1,18:0,19:0,20:10,21:-17.1,22:-3.5,23:13,24:0,25:-1.3,26:-0.4,27:-0.7,31:1});
+  await pose(page,{},30);
+  expect(await page.evaluate(()=>window.physics.component(13))).toBe(0);
+  await expect(page.locator('#viewport')).toHaveAttribute('data-explosions','2');
+  const tankPieces=await page.evaluate(()=>window.stationObject.parent.children.filter(p=>p.name.includes('tank-fragment')).length);
+  expect(tankPieces).toBeGreaterThan(0);
+});
+
+test('high-speed crush stays bounded and a later weak hit cannot heal the hull',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.2,5:100});
+  for(let i=0;i<10;i++)await pose(page,{},100);
+  const vertices=()=>page.evaluate(()=>window.capsuleObject.children.filter(p=>p.name==='capsule-hull').flatMap(p=>Array.from(p.geometry.attributes.position.array)));
+  const before=await vertices();
+  expect(Math.max(...before.map(Math.abs))).toBeLessThan(5);
+  await pose(page,{17:0,18:0,19:-1,20:0.3,24:0.5,28:2000,29:80000,30:0.15,31:99});
+  const after=await vertices();
+  let difference=0;before.forEach((v,i)=>difference=Math.max(difference,Math.abs(after[i]-v)));
+  expect(difference).toBeLessThan(0.03);
+});
+
+test('solar-cell detail uses filtered texture samples instead of tiny overlapping strips',async ({page})=>{
+  await controlledFlight(page);
+  const detail=await page.evaluate(()=>window.stationObject.children.filter(p=>p.name==='station-panel').map(p=>({mip:p.material.map.generateMipmaps,filter:p.material.map.minFilter,anisotropy:p.material.map.anisotropy,roughness:p.material.roughness})));
+  expect(detail.length).toBeGreaterThan(0);
+  for(const panel of detail) {expect(panel.mip).toBe(true);expect(panel.filter).toBe(1008);expect(panel.anisotropy).toBeGreaterThan(1);expect(panel.roughness).toBeGreaterThan(0.5);}
+});
+
+test('entry practice falls toward Earth and displays heating plasma only in the atmosphere',async ({page})=>{
+  await controlledFlight(page);
+  await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','false');
+  await pose(page,{1:-310000,4:-300,5:-600,6:0,7:1});
+  const before=await page.evaluate(()=>window.physics.flight_altitude());
+  for(let i=0;i<10;i++)await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.flight_altitude())).toBeLessThan(before);
+  await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','true');
+  await expect(page.locator('#entry-telemetry')).toBeVisible();
+  expect(await page.evaluate(()=>window.physics.component(15))).toBe(0);
 });
