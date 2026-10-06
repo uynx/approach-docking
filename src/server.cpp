@@ -69,7 +69,7 @@ public:
         const std::map<std::string,std::string> files={{"/","text/html; charset=utf-8"},
             {"/app.js","text/javascript"},{"/scene.js","text/javascript"},{"/style.css","text/css"},
             {"/flight-view.js","text/javascript"},{"/damage.js","text/javascript"},
-            {"/state.js","text/javascript"},{"/damage-effects.js","text/javascript"},{"/models.js","text/javascript"},{"/assets/earth.jpg","image/jpeg"},{"/assets/stars.jpg","image/jpeg"},
+            {"/state.js","text/javascript"},{"/damage-effects.js","text/javascript"},{"/models.js","text/javascript"},{"/assets/earth.jpg","image/jpeg"},{"/assets/stars.jpg","image/jpeg"},{"/assets/moon.jpg","image/jpeg"},
             {"/physics.wasm","application/wasm"},{"/vendor/three.module.js","text/javascript"},
             {"/vendor/three.core.js","text/javascript"}};
         if(request.method()!=http::verb::get) {

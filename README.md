@@ -4,7 +4,7 @@ Two players dock spacecraft at separate ports on a station. Each player joins
 from a browser using a room code. The game includes solo practice and an in-game
 guide. Desktop keyboard controls come first; touch controls are not implemented.
 
-Ships start 25 metres from their ports. Ships keep coasting and turning after
+Ships start 18 metres ahead, offset sideways and tilted about 11 degrees. Translation jets provide 0.8 m/s² at the starting mass. Ships keep coasting and turning after
 the pilot releases the controls. Opposite thrust slows them down. A successful dock beats a failed attempt. Successful docks
 score up to 1,000 points for precision, remaining fuel, and remaining time.
 
@@ -85,9 +85,12 @@ W/S translate forward/back, A/D left/right, R/F up/down. Arrow keys pitch and ya
 comma/period or Q/E roll. Opposite thrust stops a turn. Shift selects 20% pulse
 duty. Visible thrusters use the same force pairs and 50 ms pulse timing as the
 C++ dynamics. Right mouse drag moves the camera, C switches docking/chase view,
-and V recenters. A synthetic side view stays visible during docking and crashes.
-Colored cues report capture limits and a diamond predicts a constant-velocity
-intercept. Station recoil and angular speed appear below the inset.
+and V recenters. T resets practice. The game opens directly into a full-screen
+chase view with a compact HUD. Multiplayer and help open on demand.
+A ray from the capsule nose stops at the first visible station surface. Its
+marker disappears when the ray misses. It indicates the nose direction, not
+a predicted ballistic trajectory. Docking plays a collar-light sequence, a
+surface capture pulse and an animated score award.
 
 ## Collision and damage model
 
@@ -143,7 +146,9 @@ Earth has its actual radius of 6,371 km and a nominal 400 km reference orbit.
 The orbital period follows Earth's gravitational parameter, approximately
 92.4 minutes. The surface moves with the orbital frame and sidereal Earth rotation.
 Earth renders in a separate kilometer-scale pass to preserve nearby depth precision.
-The old 2 km flight boundary is removed.
+The old 2 km flight boundary is removed. Ocean highlights, an illuminated
+atmosphere limb, the Moon, solar glare and decorative distant satellites add
+scene depth. The satellites are scenery and do not participate in collisions.
 
 Atmospheric entry practice starts at 90 km with a descending trajectory and the
 heat shield forward. The physics applies central gravity and aerodynamic drag
@@ -161,12 +166,15 @@ it is not a fuel fire. The HUD reports altitude, airspeed and heat flux.
 
 ## Imagery credits
 
-- Earth: NASA Earth Observatory and NASA/Goddard SVS, Amy Moran and Jesse Allen,
-  [Blue Marble 2015](https://svs.gsfc.nasa.gov/30763/). The VIIRS global mosaic was
-  resized from the supplied 10,800 × 5,400 TIFF to an 8,192 × 4,096 JPEG.
+- Earth: NASA Earth Observatory, Reto Stöckli,
+  [Blue Marble Next Generation](https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/),
+  October base map resized from 21,600 × 10,800 to 16,384 × 8,192.
+  Three.js reduces it on GPUs with a smaller texture-size limit.
 - Stars: NASA/Goddard SVS, Ernie Wright and Tom Bridgman,
   [Deep Star Maps](https://svs.gsfc.nasa.gov/3895/), 8,192 × 4,096. The map uses
   observed Bright Star, Tycho-2 and UCAC3 catalog positions, brightness and color.
+- Moon: NASA Scientific Visualization Studio, Ernie Wright,
+  [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/), LROC color map at 2,048 × 1,024.
 - Solar cells use a mipmapped anisotropic texture to filter fine busbar detail
   at distance. Small geometric grid strips have been removed.
 

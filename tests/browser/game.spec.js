@@ -17,13 +17,15 @@ test('blocked WebGL reports a useful explanation instead of a renderer exception
 test('practice renders a 3D view and thrusters change flight instruments', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => {if(message.type()==='error')errors.push(message.text());});
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Dock a spacecraft.' })).toBeVisible();
+  await expect(page.locator('#flight-ui')).toBeVisible();
+  await expect(page.locator('#welcome')).toBeHidden();
   await page.getByRole('button', { name: 'Practice flight' }).click();
   await expect(page.locator('#mode')).toHaveText('PRACTICE');
-  await expect(page.locator('#camera-mode')).toHaveText('DOCKING CAM');
+  await expect(page.locator('#camera-mode')).toHaveText('CHASE CAM');
   await expect.poll(async () => Number(await page.locator('#range').textContent())).toBeLessThan(26);
-  await expect(page.locator('#guidance')).toContainText('W');
+  await expect(page.locator('#guidance')).toContainText('arrow-key');
   await expect(page.locator('#viewport')).toHaveAttribute('data-rendered', 'true');
   const fuel = Number(await page.locator('#fuel').textContent());
   await page.keyboard.down('w');
@@ -32,7 +34,7 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   expect(Number(await page.locator('#fuel').textContent())).toBeLessThan(fuel);
   expect(Number(await page.locator('#closing').textContent())).toBeGreaterThan(0.1);
   await page.getByRole('button', { name: 'Camera' }).click();
-  await expect(page.locator('#camera-mode')).toHaveText('CHASE CAM');
+  await expect(page.locator('#camera-mode')).toHaveText('DOCKING CAM');
   expect(errors).toEqual([]);
 });
 
@@ -43,7 +45,7 @@ for (const view of ['DOCKING CAM', 'CHASE CAM']) {
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Practice flight' }).click();
-    if (view === 'CHASE CAM') await page.getByRole('button', { name: 'Camera', exact: true }).click();
+    if (view === 'DOCKING CAM') await page.getByRole('button', { name: 'Camera', exact: true }).click();
     const time = await page.evaluate(() => performance.now());
     const image = () => page.evaluate(now => {
       window.flightFrame(now);
@@ -86,10 +88,12 @@ test('two browser sessions join a room and share a countdown and flight', async 
   const a = await browser.newContext(), b = await browser.newContext();
   const one = await a.newPage(), two = await b.newPage();
   await one.goto('/'); await two.goto('/');
+  await one.getByRole('button', {name:'Multiplayer',exact:true}).click();
   await one.getByLabel('Callsign').fill('Alice');
   await one.getByRole('button', { name: 'Create room' }).click();
   await expect(one.locator('#room-code')).toHaveText(/^[A-Z2-9]{6}$/);
   const code = await one.locator('#room-code').textContent();
+  await two.getByRole('button', {name:'Multiplayer',exact:true}).click();
   await two.getByLabel('Callsign').fill('Bob');
   await two.getByLabel('Room code').fill(code);
   await two.getByRole('button', { name: 'Join room' }).click();
@@ -105,13 +109,14 @@ test('two browser sessions join a room and share a countdown and flight', async 
   await one.reload();
   await expect(one.locator('#mode')).toHaveText('FLIGHT');
   await expect(one.locator('#opponent-name')).toHaveText('Bob');
+  await one.getByRole('button', {name:'Multiplayer',exact:true}).click();
   await one.getByRole('button', { name: 'Leave flight' }).click();
   await expect(two.locator('#opponent-status')).toHaveText('Approach failed');
   await a.close(); await b.close();
 });
 
 test('new flight modules and NASA textures are served with their actual MIME types', async ({ request }) => {
-  for (const [path,type] of [['state.js','text/javascript'],['damage-effects.js','text/javascript'],['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg']]) {
+  for (const [path,type] of [['state.js','text/javascript'],['damage-effects.js','text/javascript'],['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg'],['assets/moon.jpg','image/jpeg']]) {
     const response=await request.get('/'+path);
     expect(response.status()).toBe(200);
     expect(response.headers()['content-type']).toContain(type);
@@ -127,6 +132,7 @@ async function controlledFlight(page) {
   });
   await page.goto('/');
   await page.getByRole('button',{name:'Practice flight'}).click();
+  await page.getByRole('button',{name:'Camera',exact:true}).click();
   await page.evaluate(async ()=>{
     const THREE=await import('/vendor/three.module.js');
     const updateObject=THREE.Object3D.prototype.updateMatrixWorld;
@@ -164,7 +170,6 @@ test('comma and period bank the capsule while the chase camera stays level', asy
   const bank=Number(await page.locator('#bank').textContent());expect(bank).toBeGreaterThan(1);
   const views=await pose(page,{});
   expect(views.find(v=>v.near===0.05).up).toEqual([0,1,0]);
-  expect(views.some(v=>v.type==='OrthographicCamera')).toBe(true);
   const spinBefore=await page.evaluate(()=>window.physics.component(12));
   await page.keyboard.down('.');
   for(let i=0;i<5;i++) await pose(page,{},100);
@@ -189,16 +194,16 @@ test('close approach preserves camera clearance and cues distinguish speed and o
   expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.25);
 });
 
-test('an axial impact deforms the hull, leaves the side view visible, and resets cleanly', async ({page})=>{
+test('an axial impact deforms the hull in the full-screen view and resets cleanly', async ({page})=>{
   await controlledFlight(page);
   await pose(page,{2:-0.2,5:3});
   for(let i=0;i<10;i++) await pose(page,{},100);
   await expect(page.locator('#viewport')).toHaveAttribute('data-damage','crushing');
   await expect(page.locator('#impact')).toContainText('kJ');
   await expect(page.locator('#impact')).not.toContainText('CRUSH 0.0 cm');
-  await expect(page.locator('#side-view')).toBeVisible();
-  const result=await page.locator('#results').boundingBox(), inset=await page.locator('#side-view').boundingBox();
-  expect(result.x+result.width).toBeLessThan(inset.x);
+  await expect(page.locator('#side-view')).toHaveCount(0);
+  const view=await page.locator('#viewport').boundingBox();
+  expect(view.width).toBe(page.viewportSize().width);expect(view.height).toBe(page.viewportSize().height);
   await page.getByRole('button',{name:'Try again',exact:true}).click();
   await pose(page,{});
   await expect(page.locator('#viewport')).toHaveAttribute('data-damage','none');
@@ -359,4 +364,42 @@ test('reset restores station fragments after an opponent-only crash',async ({pag
   });
   expect(result.before).toBeGreaterThan(24);
   expect(result.after).toBe(0);expect(result.meshes).toBe(0);expect(result.hidden).toBe(0);
+});
+test('nose ray ends on real station geometry and disappears in open space',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-18,5:0});
+  const hit=await page.evaluate(()=>{
+    const ray=window.stationObject.parent.getObjectByName('nose-ray');
+    const mark=window.stationObject.parent.getObjectByName('nose-hit');
+    return ray?{visible:ray.visible,start:Array.from(ray.geometry.attributes.position.array).slice(0,3),end:Array.from(ray.geometry.attributes.position.array).slice(3),mark:mark.visible}:null;
+  });
+  expect(hit).not.toBeNull();expect(hit.visible).toBe(true);expect(hit.mark).toBe(true);
+  hit.start.forEach((v,i)=>expect(v).toBeCloseTo([-18,0,18][i],8));
+  expect(hit.end[2]).toBeCloseTo(-0.2,6);
+  await pose(page,{6:Math.cos(0.05),8:Math.sin(0.05)});
+  const tilted=await page.evaluate(()=>{
+    const ray=window.stationObject.parent.getObjectByName('nose-ray');
+    return {visible:ray.visible,points:Array.from(ray.geometry.attributes.position.array)};
+  });
+  expect(tilted.visible).toBe(true);
+  expect(tilted.points[0]).toBeCloseTo(-18+3.2*Math.sin(0.1),5);
+  expect(tilted.points[2]).toBeCloseTo(21.2-3.2*Math.cos(0.1),5);
+  expect((tilted.points[3]-tilted.points[0])/(tilted.points[5]-tilted.points[2])).toBeCloseTo(-Math.tan(0.1),5);
+  await pose(page,{0:100});
+  expect(await page.evaluate(()=>window.stationObject.parent.getObjectByName('nose-ray').visible)).toBe(false);
+  expect(await page.evaluate(()=>window.stationObject.parent.getObjectByName('nose-hit').visible)).toBe(false);
+});
+
+test('docking plays a capture pulse and counts the awarded score once',async ({page})=>{
+  await controlledFlight(page);
+  await pose(page,{2:-0.05,5:0.05},20);
+  expect(await page.evaluate(()=>window.physics.component(15))).toBe(1);
+  expect(await page.evaluate(()=>window.stationObject.parent.getObjectByName('capture-pulse')?.visible)).toBe(true);
+  await expect(page.locator('#results')).toHaveAttribute('data-docked','true');
+  await expect(page.locator('#score-award')).toBeVisible();
+  await pose(page,{},2500);
+  expect(Number(await page.locator('#award-value').textContent())).toBe(await page.evaluate(()=>Math.round(window.physics.component(16))));
+  expect(await page.evaluate(()=>window.stationObject.parent.getObjectByName('capture-pulse').visible)).toBe(false);
+  await pose(page,{},100);
+  expect(await page.evaluate(()=>window.stationObject.parent.getObjectByName('capture-pulse').visible)).toBe(false);
 });

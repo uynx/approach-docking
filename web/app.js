@@ -7,6 +7,7 @@ let sim, scene, socket, snapshot, slot = 0, practice = false, active = false;
 let sequence = 0, room = '', lastFrame = performance.now(), accumulator = 0, toastTimer;
 let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotAt = 0;
 let debriefKey = '', entryPractice = false;
+let awardStarted=0,awardScore=0;
 const held = new Set();
 const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired', 'Ground impact'];
 function toast(message, persistent = false) {
@@ -29,12 +30,13 @@ function current() { return Array.from({ length: Object.keys(Flight).length }, (
 function restore(state) { state.forEach((value, i) => sim.restore(i, value)); accumulator = 0; }
 function showFlight() {
   scene.resetSimulation();resetCamera();
-  active = true; $('welcome').hidden = true; $('station-label').hidden = true; $('flight-ui').hidden = false;
+  active = true; $('welcome').hidden = true; $('flight-ui').hidden = false;
+  $('session').hidden=practice;$('multiplayer').setAttribute('aria-expanded',String(!practice));
   $('reset-practice').hidden = !practice; $('copy-link').hidden = practice; $('ready').hidden = practice;
   $('pilot-name').textContent = $('callsign').value.trim() || 'Pilot';
   document.activeElement?.blur();
 }
-function showResults(pilots) {
+function showResults(pilots,now=performance.now()) {
   const mine = pilots[slot], theirs = pilots[1 - slot];
   const key = `${practice ? 'practice' : snapshot.phase}:${mine.state[Flight.status]}`;
   if (debriefKey === key) return;
@@ -56,6 +58,9 @@ function showResults(pilots) {
   $('rematch').textContent = practice ? 'Try again' : 'Ready for rematch';
   $('rematch').disabled = !practice && snapshot.phase !== 'finished';
   $('results').dataset.crash = String(mine.state[Flight.status] === 2 || mine.state[Flight.status] === 4);
+  const docked=mine.state[Flight.status]===1;
+  $('results').dataset.docked=String(docked);$('score-award').hidden=!docked;
+  if(docked){awardStarted=now;awardScore=Math.round(mine.state[Flight.score]);$('award-value').textContent='0';}
   $('results').hidden = false;
 }
 function stateReceived(message) {
@@ -71,6 +76,7 @@ function stateReceived(message) {
     for (let i = 0; i < Math.min(12, Math.floor(latency / 2000 * 120)); i++) sim.step_flight(...controls(),slot);
   }
   $('mode').textContent = message.phase.toUpperCase();
+  if(message.phase==='flight'&&previousPhase!=='flight'){$('session').hidden=true;$('multiplayer').setAttribute('aria-expanded','false');}
   $('opponent-name').textContent = opponent.name || 'Waiting for a second pilot';
   $('opponent-range').textContent = opponent.name ? Math.hypot(...opponent.state.slice(0, 3)).toFixed(1) : '—';
   $('opponent-status').textContent = !opponent.name ? 'Share the room link to invite a friend.'
@@ -108,7 +114,7 @@ function connect() {
       toast(message.message);
       if (/expired|unavailable|not found/.test(message.message)) {
         sessionStorage.removeItem('approach-session');
-        if (active && !practice) { active = false; $('flight-ui').hidden = true; $('welcome').hidden = false; $('station-label').hidden = false; }
+        if (active && !practice) startPractice(false);
       }
     }
   });
@@ -120,15 +126,15 @@ function connect() {
   });
 }
 function startPractice(entry = entryPractice) {
+  if(active&&!practice){if(socket?.readyState===WebSocket.OPEN)send({type:'leave'});sessionStorage.removeItem('approach-session');room='';}
   entryPractice=entry;
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(); accumulator = 0;
   if(entry) {
-    sim.restore(Flight.y,-310000);sim.restore(Flight.vy,-300);sim.restore(Flight.vz,-600);sim.restore(Flight.qw,0);sim.restore(Flight.qx,1);
-    scene.impactView();
+    sim.restore(Flight.y,-310000);sim.restore(Flight.vy,-300);sim.restore(Flight.vz,-600);sim.restore(Flight.qw,0);sim.restore(Flight.qx,1);sim.restore(Flight.qy,0);sim.restore(Flight.qz,0);
   }
-  $('results').hidden = true; $('mode').textContent = entry?'ATMOSPHERIC ENTRY':'PRACTICE'; $('room-code').textContent = 'LOCAL';
+  $('results').hidden = true;$('score-award').hidden=true; $('mode').textContent = entry?'ATMOSPHERIC ENTRY':'PRACTICE'; $('room-code').textContent = 'LOCAL';
   $('opponent-name').textContent = 'Solo practice'; $('opponent-range').textContent = '—';
-  $('opponent-status').textContent = 'Start with W and S. You are already lined up with the port. Reset whenever you need to.';
+  $('opponent-status').textContent = 'Solo practice';
   $('announcement').textContent = ''; showFlight();
 }
 function ready() { debriefKey = ''; $('results').hidden = true; held.clear(); send({ type: 'ready' }); }
@@ -150,6 +156,14 @@ $('copy-link').onclick = async () => {
 };
 $('camera').onclick = toggleCamera;
 $('center-view').onclick = resetCamera;
+$('multiplayer').onclick=()=>{
+  const panel=practice||!active?$('welcome'):$('session');
+  panel.hidden=!panel.hidden;$('multiplayer').setAttribute('aria-expanded',String(!panel.hidden));held.clear();
+};
+$('fullscreen').onclick=async()=>{
+  try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}
+  catch{toast('Use your browser full-screen shortcut.');}
+};
 let cameraPointer, cameraX, cameraY;
 const canvas = $('viewport');
 canvas.addEventListener('contextmenu', event => { if (active) event.preventDefault(); });
@@ -180,6 +194,8 @@ addEventListener('keydown', event => {
   if (!event.repeat && event.code === 'KeyC' && active) toggleCamera();
   if (!event.repeat && event.code === 'KeyV' && active && !$('manual').open) resetCamera();
   if (!event.repeat && event.code === 'KeyH') { held.clear(); $('manual').open ? $('manual').close() : $('manual').showModal(); }
+  if (!event.repeat && event.code === 'KeyT' && practice && !$('manual').open) startPractice();
+  if(event.code==='Escape'){$('welcome').hidden=true;$('session').hidden=true;$('multiplayer').setAttribute('aria-expanded','false');}
 });
 addEventListener('keyup', event => held.delete(event.code));
 addEventListener('blur', () => { held.clear(); stopCameraDrag(); });
@@ -209,7 +225,7 @@ function instruments(physical) {
   const seconds = Math.floor(state[Flight.elapsed]); $('clock').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} / 15:00`;
   $('thrust-mode').textContent = held.has('ShiftLeft') || held.has('ShiftRight') ? 'FINE CONTROL · 20% PULSE DUTY' : 'FULL THRUST · HOLD SHIFT FOR FINE';
   for (const [id, good] of [['closing', state[Flight.vz] >= 0 && state[Flight.vz] <= 0.15], ['offset', Math.hypot(state[Flight.x], state[Flight.y]) <= 0.25], ['drift', drift <= 0.05], ['alignment', alignment <= 3], ['spin', spin <= 0.5]]) $(id).className = good ? 'good' : 'warn';
-  const braking = Math.max(0, state[Flight.vz]) ** 2 / 0.4;
+  const braking = Math.max(0, state[Flight.vz]) ** 2 / 1.6;
   $('guidance').textContent = state[Flight.status] ? statusText[state[Flight.status]]
     : !practice && snapshot?.phase !== 'flight' ? 'Both pilots must press Ready to fly.'
     : alignment > 15 ? 'Point at your port. Arrow keys turn; opposite arrows stop the turn.'
@@ -232,7 +248,8 @@ function frame(now) {
   }
   const state = current();
   if (active) instruments(state);
-  if (practice && state[Flight.status]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }]);
+  if (practice && state[Flight.status]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }],now);
+  if(!$('score-award').hidden){const progress=Math.min(1,Math.max(0,(now-awardStarted)/1200));$('award-value').textContent=String(Math.round(awardScore*(1-(1-progress)**3)));}
   scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
   requestAnimationFrame(frame);
 }
@@ -247,6 +264,9 @@ try {
   sim.reset_flight();
   $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';
+  const saved=sessionStorage.getItem('approach-session');
+  if(!$('join-code').value&&!saved)startPractice(false);
+  else if($('join-code').value){$('welcome').hidden=false;$('multiplayer').setAttribute('aria-expanded','true');}
   connect(); requestAnimationFrame(frame);
   setInterval(() => {
     if (!practice && snapshot?.phase === 'flight' && !snapshot.pilots[slot].state[Flight.status] && socket?.readyState === WebSocket.OPEN)
