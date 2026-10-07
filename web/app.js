@@ -10,6 +10,7 @@ let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotA
 let debriefKey = '', entryPractice = false;
 let awardStarted=0,awardScore=0;
 let demo;
+let display;
 const held = new Set();
 const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired', 'Ground impact'];
 function toast(message, persistent = false) {
@@ -28,7 +29,7 @@ function send(message) {
   if (socket?.readyState === WebSocket.OPEN) { socket.send(JSON.stringify(message)); return true; }
   toast('Connecting to the server. Try again in a moment.'); return false;
 }
-function current() { return Array.from({ length: Object.keys(Flight).length }, (_, i) => sim.component(i)); }
+function current() {sim.read_state();return display.state;}
 function restore(state) { state.forEach((value, i) => sim.restore(i, value)); accumulator = 0; }
 function showFlight() {
   scene.resetSimulation();resetCamera();
@@ -236,14 +237,12 @@ addEventListener('keydown', event => {
 addEventListener('keyup', event => held.delete(event.code));
 addEventListener('blur', () => { held.clear(); stopCameraDrag(); });
 document.addEventListener('visibilitychange', () => { held.clear(); accumulator = 0; });
-function instruments(physical) {
-  const state=physical.map((v,i)=>i<13?sim.guidance_component(i,slot):v);
-  const altitude=sim.flight_altitude(), heat=sim.flight_heat();
+function instruments(state,thermal,axes) {
+  const {altitude,heat,airspeed}=thermal;
   $('entry-telemetry').hidden=altitude>150000;
-  $('entry-telemetry').textContent=`ALT ${(altitude/1000).toFixed(2)} km · AIR ${(sim.flight_airspeed()/1000).toFixed(2)} km/s · HEATING ${(heat/1000).toFixed(1)} kW/m²`;
+  $('entry-telemetry').textContent=`ALT ${(altitude/1000).toFixed(2)} km · AIR ${(airspeed/1000).toFixed(2)} km/s · HEATING ${(heat/1000).toFixed(1)} kW/m²`;
   const indicators = dockingIndicators(state);
   $('bank').textContent = indicators.roll.toFixed(1);
-  const axes = controls();
   $('attitude-command').textContent = axes[3] ? (axes[3] < 0 ? 'PITCH UP · TAIL DOWN' : 'PITCH DOWN · TAIL UP') : axes[4] ? (axes[4] > 0 ? 'YAW RIGHT · TAIL LEFT' : 'YAW LEFT · TAIL RIGHT') : axes[5] ? 'ROLL · OPPOSITE KEY TO STOP' : 'ARROWS TILT · , / . ROLL';
   $('docking-aid').dataset.state = indicators.ready ? 'ready' : !indicators.speed ? 'brake' : 'correct';
   $('capture-status').textContent = state[Flight.status] ? statusText[state[Flight.status]].toUpperCase() : indicators.ready ? 'WITHIN CAPTURE LIMITS' : !indicators.speed ? 'CORRECT CLOSING SPEED' : 'CORRECT ALIGNMENT / DRIFT';
@@ -286,8 +285,10 @@ function frame(now) {
       sim.step_flight(...axes,slot); if (practice) sim.judge_flight(slot); accumulator -= 1 / 120;
     }
   }
-  const state = current();
-  if (active) instruments(state);
+  sim.read_frame(slot);
+  const state=display.state;
+  const thermal={altitude:display.thermal[0],heat:display.thermal[1],airspeed:display.thermal[2],guidance:display.guidance};
+  if (active) instruments(display.guidance,thermal,axes);
   if (practice && state[Flight.status]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }],now);
   if(demo) {
     tutorialCaption(state,axes);
@@ -299,18 +300,20 @@ function frame(now) {
     }
   }
   if(!$('score-award').hidden){const progress=Math.min(1,Math.max(0,(now-awardStarted)/1200));$('award-value').textContent=String(Math.round(awardScore*(1-(1-progress)**3)));}
-  const opponent=practice||!snapshot?.pilots[1-slot]?.name?null:Array.from({length:sim.state_size()},(_,i)=>sim.opponent_component(i));
-  scene.render(state, opponent, slot, active, axes, demo?demo.clock:now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
+  const opponent=practice||!snapshot?.pilots[1-slot]?.name?null:display.opponent;
+  scene.render(state,opponent,slot,active,axes,demo?demo.clock:now,display.station,thermal);
   requestAnimationFrame(frame);
 }
 try {
   scene = createScene($('viewport'));
-  await scene.ready;
-  const response = await fetch('/physics.wasm');
+  const [response]=await Promise.all([fetch('/physics.wasm'),scene.ready]);
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
   const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });
   sim = instance.exports;
-  if(sim.state_size()!==Object.keys(Flight).length||sim.station_size()!==Object.keys(Station).length) throw new Error('Physics and display versions differ. Reload after rebuilding.');
+  const size=Object.keys(Flight).length,stationSize=Object.keys(Station).length;
+  if(sim.state_size()!==size||sim.station_size()!==stationSize||sim.frame_size?.()!==size*3+stationSize+3) throw new Error('Physics and display versions differ. Reload after rebuilding.');
+  const values=new Float64Array(sim.memory.buffer,sim.read_frame(slot),sim.frame_size()),guideAt=size*2+stationSize;
+  display={state:values.subarray(0,size),opponent:values.subarray(size,size*2),station:values.subarray(size*2,guideAt),guidance:values.subarray(guideAt,guideAt+size),thermal:values.subarray(guideAt+size)};
   sim.reset_flight();
   $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';

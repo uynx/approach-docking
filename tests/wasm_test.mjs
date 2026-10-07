@@ -80,3 +80,16 @@ for(let seed=1;seed<=32;seed++) {
 }
 assert.equal(new Set(launches).size,32,'new seeds produce different launch attitudes');
 console.log('PASS varied launch attitudes stay within a controllable cone');
+assert.equal(sim.frame_size(),sim.state_size()*3+sim.station_size()+3);
+for(const slot of [0,1]) {
+  sim.reset_flight(123);sim.restore(0,2.4);sim.restore_station(10,0.02);sim.restore_opponent(0,12);
+  const packed=new Float64Array(sim.memory.buffer,sim.read_frame(slot),sim.frame_size());
+  const size=sim.state_size(),stationSize=sim.station_size(),guideAt=size*2+stationSize;
+  for(let i=0;i<size;i++){assert.equal(packed[i],sim.component(i));assert.equal(packed[size+i],sim.opponent_component(i));}
+  for(let i=0;i<stationSize;i++)assert.equal(packed[size*2+i],sim.station_component(i));
+  for(let i=0;i<13;i++)assert.equal(packed[guideAt+i],sim.guidance_component(i,slot));
+  assert.equal(packed[guideAt+size],sim.flight_altitude());assert.equal(packed[guideAt+size+1],sim.flight_heat());assert.equal(packed[guideAt+size+2],sim.flight_airspeed());
+  sim.restore(0,7);sim.read_state();assert.equal(packed[0],7,'the tutorial reads the latest tick through the same buffer');
+  sim.reset_flight(456);sim.read_frame(slot);assert.equal(packed[13],80,'round resets update the existing view');
+}
+console.log('PASS packed frame views match scalar state and guidance across both slots and resets');
