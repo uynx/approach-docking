@@ -7,12 +7,33 @@ import * as THREE from 'three';
 const source=(await readFile(new URL('../web/models.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./flight-view.js',new URL('../web/flight-view.js',import.meta.url).href);
-const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera,meshHit}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const effectsSource=(await readFile(new URL('../web/damage-effects.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./state.js',new URL('../web/state.js',import.meta.url).href)
   .replace('./damage.js',new URL('../web/damage.js',import.meta.url).href);
 const {createDamageEffects}=await import('data:text/javascript;base64,'+Buffer.from(effectsSource).toString('base64'));
+
+test('accelerated rays preserve the nearest actual triangle after damage and reset',()=>{
+  const station=stationModel(1,false);station.group.updateMatrixWorld(true);
+  const origin=new THREE.Vector3(-18,0,2),direction=new THREE.Vector3(0,0,-1);
+  const expected=()=>{
+    const ray=new THREE.Raycaster(origin,direction),meshes=solidMeshes(station.group);
+    const materials=new Map(meshes.map(p=>[p.material,p.material.side]));
+    materials.forEach((side,material)=>material.side=THREE.DoubleSide);
+    const hit=ray.intersectObjects(meshes,false)[0];
+    materials.forEach((side,material)=>material.side=side);return hit;
+  };
+  for(const impacts of [[],[{point:new THREE.Vector3(-18,0,0),normal:new THREE.Vector3(0,0,1),crush:0.4}],[]]) {
+    station.deform(impacts);
+    const actual=meshHit(origin,direction,solidMeshes(station.group)),reference=expected();
+    assert.ok(actual,'the collar still has a solid surface');
+    assert.ok(Math.abs(actual.distance-reference.distance)<1e-8,'damage refits the actual surface');
+    assert.equal(actual.object,reference.object);assert.ok(actual.face.normal.distanceTo(reference.face.normal)<1e-8);
+    assert.equal(meshHit(origin,direction,solidMeshes(station.group),0.1),null,'short rays do not reach the collar');
+  }
+  assert.equal(meshHit(new THREE.Vector3(-27.5,0,-11),direction,solidMeshes(station.group),4),null,'empty truss bays stay open');
+});
 
 test('camera clearance uses actual truss rails while leaving empty bays open',()=>{
   const station=stationModel(1,false);station.group.updateMatrixWorld(true);

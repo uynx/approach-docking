@@ -24,12 +24,64 @@ export function solidMeshes(root,exclude) {
   }
   collect(root);return result;
 }
+const rayTrees=new WeakMap();
+const localRay=new THREE.Ray(),inverse=new THREE.Matrix4(),a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),point=new THREE.Vector3(),boxPoint=new THREE.Vector3(),worldPoint=new THREE.Vector3();
+function rayTree(geometry) {
+  const positions=geometry.attributes.position,index=geometry.index;
+  let tree=rayTrees.get(geometry);
+  function vertex(i,target){return target.fromBufferAttribute(positions,index?index.getX(i):i);}
+  function refit(node) {
+    node.box.makeEmpty();
+    if(node.faces)for(const face of node.faces)for(let j=0;j<3;j++)node.box.expandByPoint(vertex(face*3+j,a));
+    else {refit(node.left);refit(node.right);node.box.union(node.left.box).union(node.right.box);}
+  }
+  if(!tree) {
+    const count=Math.floor((index?index.count:positions.count)/3),centers=new Float64Array(count*3);
+    for(let i=0;i<count;i++){vertex(i*3,a);vertex(i*3+1,b);vertex(i*3+2,c);for(let j=0;j<3;j++)centers[i*3+j]=(a.getComponent(j)+b.getComponent(j)+c.getComponent(j))/3;}
+    function build(faces) {
+      const node={box:new THREE.Box3()};
+      if(faces.length<=8)node.faces=faces;
+      else {
+        const low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity];
+        for(const face of faces)for(let j=0;j<3;j++){const v=centers[face*3+j];low[j]=Math.min(low[j],v);high[j]=Math.max(high[j],v);}
+        const spans=high.map((v,j)=>v-low[j]),axis=spans.indexOf(Math.max(...spans));
+        faces.sort((x,y)=>centers[x*3+axis]-centers[y*3+axis]);
+        const middle=Math.floor(faces.length/2);node.left=build(faces.slice(0,middle));node.right=build(faces.slice(middle));
+      }
+      return node;
+    }
+    tree={root:build(Array.from({length:count},(_,i)=>i)),version:-1};rayTrees.set(geometry,tree);
+  }
+  if(tree.version!==positions.version){refit(tree.root);tree.version=positions.version;}
+  return tree.root;
+}
+export function meshHit(origin,direction,meshes,far=Infinity) {
+  let nearest=null,limit=far;
+  for(const object of meshes) {
+    const geometry=object.geometry,positions=geometry.attributes.position,index=geometry.index;
+    inverse.copy(object.matrixWorld).invert();localRay.origin.copy(origin).applyMatrix4(inverse);
+    localRay.direction.copy(origin).add(direction).applyMatrix4(inverse).sub(localRay.origin);
+    const scale=localRay.direction.length();localRay.direction.multiplyScalar(1/scale);
+    const stack=[rayTree(geometry)];
+    while(stack.length) {
+      const node=stack.pop();
+      if(!node.box.containsPoint(localRay.origin)&&(!localRay.intersectBox(node.box,boxPoint)||boxPoint.distanceToSquared(localRay.origin)>(limit*scale)**2))continue;
+      if(!node.faces){stack.push(node.right,node.left);continue;}
+      for(const face of node.faces) {
+        const ia=index?index.getX(face*3):face*3,ib=index?index.getX(face*3+1):face*3+1,ic=index?index.getX(face*3+2):face*3+2;
+        a.fromBufferAttribute(positions,ia);b.fromBufferAttribute(positions,ib);c.fromBufferAttribute(positions,ic);
+        if(!localRay.intersectTriangle(a,b,c,false,point))continue;
+        worldPoint.copy(point).applyMatrix4(object.matrixWorld);
+        const distance=worldPoint.distanceTo(origin);if(distance>limit)continue;
+        limit=distance;nearest={distance,point:worldPoint.clone(),object,face:{normal:THREE.Triangle.getNormal(a,b,c,new THREE.Vector3())}};
+      }
+    }
+  }
+  return nearest;
+}
 export function clipMeshCamera(origin,desired,meshes,clearance=0.25) {
   const delta=desired.clone().sub(origin),length=delta.length();if(!length)return origin.clone();
-  const ray=new THREE.Raycaster(origin,delta.multiplyScalar(1/length),0,length),materials=new Map();
-  for(const object of meshes)if(!materials.has(object.material)){materials.set(object.material,object.material.side);object.material.side=THREE.DoubleSide;}
-  let hit;
-  try{hit=ray.intersectObjects(meshes,false)[0];}finally{for(const [material,side] of materials)material.side=side;}
+  const hit=meshHit(origin,delta.multiplyScalar(1/length),meshes,length);
   if(!hit)return desired.clone();
   const normal=hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
   const facing=normal.dot(delta);

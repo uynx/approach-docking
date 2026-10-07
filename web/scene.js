@@ -2,7 +2,7 @@ import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
 import { shipPosition, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
 import { createDamageEffects } from './damage-effects.js';
-import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera } from './models.js';
+import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera,meshHit } from './models.js';
 
 export function createScene(canvas) {
   const context = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
@@ -83,7 +83,6 @@ export function createScene(canvas) {
   noseRay.name='nose-ray';noseRay.frustumCulled=false;
   const noseHit=new THREE.Mesh(new THREE.RingGeometry(0.13,0.17,48),new THREE.MeshBasicMaterial({color:0x96e4e2,transparent:true,opacity:0.9,depthWrite:false,side:THREE.DoubleSide}));
   noseHit.name='nose-hit';scene.add(noseRay,noseHit);
-  const raycaster=new THREE.Raycaster();
   const capturePulse=new THREE.Mesh(new THREE.RingGeometry(0.84,0.94,64),new THREE.MeshBasicMaterial({color:0x8ff9da,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));
   capturePulse.name='capture-pulse';capturePulse.visible=false;scene.add(capturePulse);
   const collarLights=station.collarLights;
@@ -176,8 +175,7 @@ export function createScene(canvas) {
         project(marker,station.group.localToWorld(new THREE.Vector3(portX,0,0)));marker.dataset.state=indicators.ready?'ready':!indicators.speed?'brake':'correct';
         if(!state[Flight.status]&&thermal.altitude>150000) {
           const nose=new THREE.Vector3(0,0,-3.2).applyQuaternion(q).add(origin);
-          raycaster.set(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q));
-          const hit=raycaster.intersectObjects(solids,false)[0];
+          const hit=meshHit(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q),solids);
           if(hit) {
             const normal=hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
             noseRay.geometry.attributes.position.setXYZ(0,nose.x,nose.y,nose.z);
