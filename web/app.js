@@ -1,6 +1,7 @@
 import { Flight } from './state.js';
 import { createScene } from './scene.js';
 import { dockingIndicators } from './flight-view.js';
+import {pilotControls,tutorialLessons} from './tutorial.js';
 
 const $ = id => document.getElementById(id);
 let sim, scene, socket, snapshot, slot = 0, practice = false, active = false;
@@ -8,6 +9,7 @@ let sequence = 0, room = '', lastFrame = performance.now(), accumulator = 0, toa
 let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotAt = 0;
 let debriefKey = '', entryPractice = false;
 let awardStarted=0,awardScore=0;
+let demo;
 const held = new Set();
 const statusText = ['Approaching', 'Docked', 'Approach failed', 'Time expired', 'Ground impact'];
 function toast(message, persistent = false) {
@@ -16,7 +18,7 @@ function toast(message, persistent = false) {
   if (!persistent) toastTimer = setTimeout(() => { $('toast').hidden = true; }, 6000);
 }
 function controls() {
-  if ($('manual').open || !active) return [0, 0, 0, 0, 0, 0];
+  if ($('manual').open || !active || demo) return [0, 0, 0, 0, 0, 0];
   const down = key => held.has(key) ? 1 : 0;
   const amount = held.has('ShiftLeft') || held.has('ShiftRight') ? 0.2 : 1;
   return [down('KeyD') - down('KeyA'), down('KeyR') - down('KeyF'), down('KeyW') - down('KeyS'),
@@ -126,6 +128,7 @@ function connect() {
   });
 }
 function startPractice(entry = entryPractice) {
+  demo=undefined;$('tutorial').hidden=true;
   if(active&&!practice){if(socket?.readyState===WebSocket.OPEN)send({type:'leave'});sessionStorage.removeItem('approach-session');room='';}
   entryPractice=entry;
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(crypto.getRandomValues(new Uint32Array(1))[0]||1); accumulator = 0;
@@ -136,6 +139,30 @@ function startPractice(entry = entryPractice) {
   $('opponent-name').textContent = 'Solo practice'; $('opponent-range').textContent = '—';
   $('opponent-status').textContent = 'Solo practice';
   $('announcement').textContent = ''; showFlight();
+}
+function startLesson(index=0) {
+  startPractice(false);
+  if(scene.resetCamera())toggleCamera();
+  demo={index,paused:false,clock:0,finishedAt:null};
+  const lesson=tutorialLessons[index];
+  for(const [field,value] of Object.entries(lesson.pose))sim.restore(Number(field),value);
+  $('tutorial').hidden=false;$('mode').textContent='WATCHING TUTORIAL';
+  $('tutorial-step').textContent=`FLIGHT SCHOOL · ${index+1} / ${tutorialLessons.length}`;
+  $('tutorial-title').textContent=lesson.title;$('tutorial-tip').textContent=lesson.tip;
+  $('tutorial-pause').textContent='Pause';$('tutorial-pause').setAttribute('aria-label','Pause tutorial');
+  $('tutorial-next').textContent='Next example';
+}
+function tutorialCaption(state,axes) {
+  const lesson=tutorialLessons[demo.index],cues=dockingIndicators(state);
+  $('tutorial-tip').textContent=lesson.id!=='dock'?lesson.tip:state[Flight.status]===1
+    ?`Soft capture. ${Math.round(state[Flight.score])} points from a real flight. Precision, fuel and time all count.`
+    :cues.alignment>1?'Arrow keys turn the capsule. Opposite thrust stops the turn. First point the nose at the port.'
+    :Math.hypot(state[Flight.x],state[Flight.y])>0.1?'A / D and R / F centre the capsule. Opposite thrust removes drift before the approach.'
+    :state[Flight.z]<-5?'W accelerates toward the port. Releasing it lets you coast. Watch the closing speed.'
+    :state[Flight.vz]>0.12?'S brakes the approach. Slow below 0.15 m/s before contact. Start braking while you still have room.'
+    :'Use short, gentle pulses near the collar. Keep the nose straight and sideways drift close to zero.';
+  const keys=[['A','D'],['F','R'],['S','W'],['↑','↓'],['←','→'],['E','Q']];
+  $('tutorial-keys').textContent=state[Flight.status]?'COASTING · WATCH THE RESULT':axes.map((v,i)=>Math.abs(v)>0.008?keys[i][v>0?1:0]:'').filter(Boolean).join('  ')||'COASTING';
 }
 function ready() { debriefKey = ''; $('results').hidden = true; held.clear(); send({ type: 'ready' }); }
 function resetCamera() { $('camera-mode').textContent = scene.resetCamera() ? 'DOCKING CAM' : 'CHASE CAM'; document.querySelector('.reticle').hidden = false; }
@@ -156,6 +183,14 @@ $('copy-link').onclick = async () => {
 };
 $('camera').onclick = toggleCamera;
 $('center-view').onclick = resetCamera;
+$('watch-tutorial').onclick=()=>{$('manual').close();startLesson();};
+$('tutorial-next').onclick=()=>startLesson((demo.index+1)%tutorialLessons.length);
+$('tutorial-exit').onclick=()=>startPractice(false);
+$('tutorial-pause').onclick=()=>{
+  demo.paused=!demo.paused;accumulator=0;
+  $('tutorial-pause').textContent=demo.paused?'Resume':'Pause';
+  $('tutorial-pause').setAttribute('aria-label',demo.paused?'Resume tutorial':'Pause tutorial');
+};
 $('multiplayer').onclick=()=>{
   const panel=practice||!active?$('welcome'):$('session');
   panel.hidden=!panel.hidden;$('multiplayer').setAttribute('aria-expanded',String(!panel.hidden));held.clear();
@@ -241,16 +276,29 @@ function instruments(physical) {
 }
 function frame(now) {
   const delta = Math.min(0.1, (now - lastFrame) / 1000); lastFrame = now;
-  const axes = controls();
-  if (active && (practice || snapshot?.phase === 'flight' || snapshot?.phase === 'finished') && (practice || performance.now() - lastSnapshotAt < 1000)) {
-    accumulator += delta;
-    while (accumulator >= 1 / 120) { sim.step_flight(...axes,slot); if (practice) sim.judge_flight(slot); accumulator -= 1 / 120; }
+  let axes = controls();
+  if(demo&&!demo.paused)demo.clock+=delta*1000;
+  if (active && !demo?.paused && (practice || snapshot?.phase === 'flight' || snapshot?.phase === 'finished') && (practice || performance.now() - lastSnapshotAt < 1000)) {
+    accumulator += delta*(demo&&!sim.component(Flight.status)?2:1);
+    while (accumulator >= 1 / 120) {
+      if(demo)axes=demo.index===0?pilotControls(current()):[0,0,demo.index===1?1:0,0,0,0];
+      sim.step_flight(...axes,slot); if (practice) sim.judge_flight(slot); accumulator -= 1 / 120;
+    }
   }
   const state = current();
   if (active) instruments(state);
   if (practice && state[Flight.status]) showResults([{ name: $('pilot-name').textContent, state }, { name: '', state: new Array(17).fill(0) }],now);
+  if(demo) {
+    tutorialCaption(state,axes);
+    if(state[Flight.status]) {
+      if(demo.index>0)$('results').hidden=true;
+      if(demo.finishedAt===null)demo.finishedAt=demo.clock;
+      if(demo.clock-demo.finishedAt>6000&&demo.index<tutorialLessons.length-1){startLesson(demo.index+1);requestAnimationFrame(frame);return;}
+      if(demo.index===tutorialLessons.length-1)$('tutorial-next').textContent='Watch again';
+    }
+  }
   if(!$('score-award').hidden){const progress=Math.min(1,Math.max(0,(now-awardStarted)/1200));$('award-value').textContent=String(Math.round(awardScore*(1-(1-progress)**3)));}
-  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
+  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, demo?demo.clock:now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
   requestAnimationFrame(frame);
 }
 try {

@@ -25,7 +25,7 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   await expect(page.locator('#mode')).toHaveText('PRACTICE');
   await expect(page.locator('#camera-mode')).toHaveText('CHASE CAM');
   await expect.poll(async () => Number(await page.locator('#range').textContent())).toBeLessThan(26);
-  await expect(page.locator('#guidance')).toContainText('arrow-key');
+  await expect(page.locator('#guidance')).toContainText(/[Aa]rrow.key/);
   await expect(page.locator('#viewport')).toHaveAttribute('data-rendered', 'true');
   const fuel = Number(await page.locator('#fuel').textContent());
   await page.keyboard.down('w');
@@ -116,7 +116,7 @@ test('two browser sessions join a room and share a countdown and flight', async 
 });
 
 test('new flight modules and NASA textures are served with their actual MIME types', async ({ request }) => {
-  for (const [path,type] of [['state.js','text/javascript'],['damage-effects.js','text/javascript'],['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg'],['assets/moon.jpg','image/jpeg']]) {
+  for (const [path,type] of [['state.js','text/javascript'],['damage-effects.js','text/javascript'],['flight-view.js','text/javascript'],['damage.js','text/javascript'],['models.js','text/javascript'],['tutorial.js','text/javascript'],['assets/earth.jpg','image/jpeg'],['assets/stars.jpg','image/jpeg'],['assets/moon.jpg','image/jpeg']]) {
     const response=await request.get('/'+path);
     expect(response.status()).toBe(200);
     expect(response.headers()['content-type']).toContain(type);
@@ -166,6 +166,27 @@ test('Earth starts at a new longitude and keeps rotating after docking',async ({
   expect(await rotation()).not.toEqual(docked);
 });
 
+test('watching the tutorial allows pause, crash examples and returning to flight',async ({page})=>{
+  test.setTimeout(60000);
+  await controlledFlight(page);
+  await page.getByRole('button',{name:'How to play'}).click();
+  await page.getByRole('button',{name:'Watch flight tutorial'}).click();
+  await expect(page.locator('#tutorial-title')).toHaveText('A clean approach');
+  await pose(page,{},100);
+  await page.getByRole('button',{name:'Pause tutorial'}).click();
+  const elapsed=await page.evaluate(()=>window.physics.component(14));
+  await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.component(14))).toBe(elapsed);
+  await page.getByRole('button',{name:'Next example'}).click();
+  await expect(page.locator('#tutorial-title')).toHaveText('Brake before the port');
+  for(let i=0;i<25;i++)await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.component(15))).toBe(2);
+  expect(Number(await page.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThan(0);
+  await page.getByRole('button',{name:'Take control'}).click();
+  await expect(page.locator('#tutorial')).toBeHidden();
+  await expect(page.locator('#mode')).toHaveText('PRACTICE');
+  expect(await page.evaluate(()=>window.physics.component(15))).toBe(0);
+});
 
 async function pose(page, values, advance=0) {
   return page.evaluate(({values,advance})=>{

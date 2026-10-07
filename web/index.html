@@ -32,6 +32,11 @@
     </section>
     <section id="flight-ui" hidden>
       <div class="flight-top"><span id="mode">PRACTICE</span><span id="camera-mode">CHASE CAM</span><span id="clock">00:00 / 15:00</span></div>
+      <aside id="tutorial" hidden>
+        <span id="tutorial-step"></span><h2 id="tutorial-title"></h2>
+        <p id="tutorial-tip"></p><span id="tutorial-keys"></span>
+        <div><button id="tutorial-pause" aria-label="Pause tutorial">Pause</button><button id="tutorial-next">Next example</button><button id="tutorial-exit">Take control</button></div>
+      </aside>
       <aside class="telemetry" aria-label="Flight instruments">
         <div id="docking-aid" data-state="correct"><span id="capture-status">ALIGN YOUR CAPSULE</span></div>
         <div class="readouts">
@@ -73,6 +78,7 @@
   <dialog id="manual">
     <button id="close-manual" class="close" aria-label="Close manual">×</button>
     <h2>Fly the capsule</h2>
+    <button id="watch-tutorial" class="primary">Watch flight tutorial</button>
     <p>W / S forward and back. A / D sideways. R / F up and down.</p>
     <p>Arrow keys pitch and yaw. Q / E or comma / period roll. Apply the opposite control to stop moving or turning. Hold Shift for short, gentle thruster pulses.</p>
     <p>C changes camera. Right mouse drag looks around. V recenters. T resets practice. Esc closes panels. H opens this help.</p>
