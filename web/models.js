@@ -61,7 +61,8 @@ function batch(group) {
   }
 }
 
-export function stationModel(anisotropy = 1) {
+export function stationModel(anisotropy = 1, textures = true) {
+  if(textures) {
   const canvas=document.createElement('canvas');canvas.width=512;canvas.height=1024;
   const ctx=canvas.getContext('2d');ctx.fillStyle='#162842';ctx.fillRect(0,0,512,1024);
   for(let y=0;y<1024;y+=64)for(let x=0;x<512;x+=64) {
@@ -72,6 +73,7 @@ export function stationModel(anisotropy = 1) {
   const cellTexture=new THREE.CanvasTexture(canvas);cellTexture.colorSpace=THREE.SRGBColorSpace;
   cellTexture.anisotropy=anisotropy;cellTexture.minFilter=THREE.LinearMipmapLinearFilter;
   solar.map=cellTexture;solar.color.setHex(0xffffff);solar.roughness=0.55;
+  }
 
   const group = new THREE.Group(), colliders = [], fragments=[];group.name='station';
   const module = (x, y, z, radius, length) => {

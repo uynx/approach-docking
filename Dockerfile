@@ -9,6 +9,7 @@ COPY CMakeLists.txt ./
 COPY src ./src
 COPY tests ./tests
 COPY web ./web
+COPY tools ./tools
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build -j2 \
     && ctest --test-dir build --output-on-failure
