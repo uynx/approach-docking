@@ -74,7 +74,7 @@ void Game::receive(int peer,const std::string& text) {
         }
         if(slot<0) { error(peer,type=="resume" ? "Pilot session unavailable." : "Room is full or already flying."); return; }
         auto& p=room.pilots[slot];
-        if(type!="resume") { p.name=name; p.token=random_text(32,"0123456789abcdef"); }
+        if(type!="resume") { p.name=name; p.token=random_text(32,"0123456789abcdef");p.state=flight::initial(std::random_device{}()); }
         p.peer=peer;
         room.touched=tick_;
         joined_[peer]=code;
@@ -101,7 +101,7 @@ void Game::receive(int peer,const std::string& text) {
             room.phase="lobby"; room.station={};
             for(auto& pilot:room.pilots) {
                 if(pilot.peer<0 && pilot.token.empty()) pilot=Pilot{};
-                pilot.ready=false; pilot.state=flight::initial(); pilot.controls={};
+                pilot.ready=false; pilot.state=flight::initial(std::random_device{}()); pilot.controls={};
             }
         }
         if(room.phase!="lobby") { error(peer,"The round has already started."); return; }

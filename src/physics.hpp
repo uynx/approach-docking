@@ -25,7 +25,7 @@ Vec add(Vec, Vec);
 Vec scale(Vec, double);
 double length(Vec);
 Vec rotate(Quat, Vec);
-State initial();
+State initial(unsigned seed = 0);
 double air_density(double altitude);
 double altitude(const State&);
 double heat_flux(const State&);

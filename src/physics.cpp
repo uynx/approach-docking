@@ -34,11 +34,19 @@ double heat_flux(const State& s) {
     const double speed=length(air_velocity(s));
     return 1.74153e-4*__builtin_sqrt(air_density(altitude(s))/1.35)*speed*speed*speed;
 }
-State initial() {
+State initial(unsigned seed) {
     State s;
     s.position={2.4,-1.5,-18};
-    const double norm=__builtin_sqrt(1+0.05*0.05+0.08*0.08+0.035*0.035);
-    s.attitude={1/norm,0.05/norm,-0.08/norm,0.035/norm};
+    if(seed) {
+        auto random=[&]() {seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed/4294967296.0;};
+        const double angle=(8+8*random())*3.141592653589793/180;
+        const double azimuth=random()*6.283185307179586, z=2*random()-1;
+        const double r=__builtin_sqrt(1-z*z), sine=__builtin_sin(angle/2);
+        s.attitude={__builtin_cos(angle/2),sine*r*__builtin_cos(azimuth),sine*r*__builtin_sin(azimuth),sine*z};
+    } else {
+        const double norm=__builtin_sqrt(1+0.05*0.05+0.08*0.08+0.035*0.035);
+        s.attitude={1/norm,0.05/norm,-0.08/norm,0.035/norm};
+    }
     s.omega=rotate(conjugate(s.attitude),{mean_motion(),0,0});
     return s;
 }

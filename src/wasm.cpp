@@ -3,7 +3,7 @@
 static flight::State state;
 static flight::Station station;
 extern "C" {
-void reset_flight() { state=flight::initial();station={}; }
+void reset_flight(unsigned seed) { state=flight::initial(seed);station={}; }
 int state_size() { return flight::state_size; }
 int station_size() { return flight::station_size; }
 double component(int index) { return flight::component(state,index); }

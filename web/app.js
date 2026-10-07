@@ -128,7 +128,7 @@ function connect() {
 function startPractice(entry = entryPractice) {
   if(active&&!practice){if(socket?.readyState===WebSocket.OPEN)send({type:'leave'});sessionStorage.removeItem('approach-session');room='';}
   entryPractice=entry;
-  practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(); accumulator = 0;
+  practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(crypto.getRandomValues(new Uint32Array(1))[0]||1); accumulator = 0;
   if(entry) {
     sim.restore(Flight.y,-310000);sim.restore(Flight.vy,-300);sim.restore(Flight.vz,-600);sim.restore(Flight.qw,0);sim.restore(Flight.qx,1);sim.restore(Flight.qy,0);sim.restore(Flight.qz,0);
   }

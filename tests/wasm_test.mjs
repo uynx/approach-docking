@@ -41,3 +41,15 @@ assert.equal(sim.component(Flight.fuel),80);
 assert.equal(sim.component(Flight.impactPart),-1);
 assert.equal(sim.station_component(Station.brokenPanels),0);
 console.log('PASS every named state field round-trips and rejects nonfinite input');
+const launches=[];
+for(let seed=1;seed<=32;seed++) {
+  sim.reset_flight(seed);
+  const attitude=[6,7,8,9].map(sim.component);
+  assert.ok(sim.flight_alignment()>=8&&sim.flight_alignment()<=16,'start remains close to docking attitude');
+  assert.ok(sim.flight_spin()<1e-9,'random attitude does not invent a spin');
+  sim.reset_flight(seed);
+  assert.deepEqual([6,7,8,9].map(sim.component),attitude,'seeded launch is reproducible');
+  launches.push(attitude.join(','));
+}
+assert.equal(new Set(launches).size,32,'new seeds produce different launch attitudes');
+console.log('PASS varied launch attitudes stay within a controllable cone');
