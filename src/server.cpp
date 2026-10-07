@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
-#include <fstream>
 #include <csignal>
 
 namespace asio=boost::asio;
@@ -77,11 +76,20 @@ public:
         } else if(path=="/health") {
             response->set(http::field::content_type,"application/json"); response->body()="{\"status\":\"ok\"}";
         } else if(files.count(path)) {
-            std::ifstream file(server.web+(path=="/" ? "/index.html" : path),std::ios::binary);
-            if(file) {
-                response->set(http::field::content_type,files.at(path));
-                response->body()=std::string(std::istreambuf_iterator<char>(file),{});
-            } else {response->result(http::status::not_found);response->body()="Not found";}
+            const auto filename=server.web+(path=="/" ? "/index.html" : path);
+            auto file=std::make_shared<http::response<http::file_body>>(http::status::ok,11);
+            beast::error_code ec;file->body().open(filename.c_str(),beast::file_mode::scan,ec);
+            if(ec){response->result(http::status::not_found);response->body()="Not found";}
+            else {
+                std::error_code error;const auto modified=std::filesystem::last_write_time(filename,error);
+                const std::string etag="\""+std::to_string(modified.time_since_epoch().count())+"-"+std::to_string(file->body().size())+"\"";
+                response->set(http::field::etag,etag);
+                if(!error&&request[http::field::if_none_match]==etag)response->result(http::status::not_modified);
+                else {
+                    file->base()=response->base();file->set(http::field::content_type,files.at(path));file->prepare_payload();
+                    http::async_write(ws.next_layer(),*file,[self=shared_from_this(),file](auto,auto){self->close();});return;
+                }
+            }
         } else {response->result(http::status::not_found);response->body()="Not found";}
         response->prepare_payload();
         http::async_write(ws.next_layer(),*response,[self=shared_from_this(),response](auto,auto){self->close();});

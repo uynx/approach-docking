@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-const server = spawn(process.argv[2], ['--port', '18765', '--web', process.argv[3]], { stdio: ['ignore', 'pipe', 'pipe'] });
+import {mkdtemp,copyFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+const web=await mkdtemp(join(tmpdir(),'approach-network-'));
+await copyFile(join(process.argv[3],'physics.wasm'),join(web,'physics.wasm'));
+await writeFile(join(web,'app.js'),'export const revision=1;');
+const server = spawn(process.argv[2], ['--port', '18765', '--web', web], { stdio: ['ignore', 'pipe', 'pipe'] });
 let log = '';
 server.stderr.on('data', b => { log += b; });
 const sockets = [];
@@ -12,6 +18,14 @@ try {
     await new Promise(r => setTimeout(r, 50));
   }
   assert.equal((await fetch('http://127.0.0.1:18765/physics.wasm')).headers.get('content-type'), 'application/wasm');
+  const asset=await fetch('http://127.0.0.1:18765/app.js'),etag=asset.headers.get('etag');
+  assert.equal(await asset.text(),'export const revision=1;');assert.ok(etag,'static assets can be revalidated');
+  const cached=await fetch('http://127.0.0.1:18765/app.js',{headers:{'If-None-Match':etag}});
+  assert.equal(cached.status,304);assert.equal(await cached.text(),'');
+  await writeFile(join(web,'app.js'),'export const revision=22;');
+  const changed=await fetch('http://127.0.0.1:18765/app.js',{headers:{'If-None-Match':etag}});
+  assert.equal(changed.status,200);assert.notEqual(changed.headers.get('etag'),etag);assert.equal(await changed.text(),'export const revision=22;');
+  console.log('PASS cached assets revalidate without a body and changed assets are served fresh');
   async function client() {
     const ws = new WebSocket('ws://127.0.0.1:18765/ws');
     sockets.push(ws);
@@ -49,4 +63,5 @@ try {
   for (const ws of sockets) ws.close();
   server.kill('SIGTERM');
   await once(server, 'exit');
+  await rm(web,{recursive:true});
 }
