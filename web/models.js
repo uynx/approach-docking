@@ -22,6 +22,7 @@ function strut(parent, a, b, radius = 0.035, mat = metal) {
   const object = mesh(parent, new THREE.CylinderGeometry(radius, radius, delta.length(), 8), mat);
   object.position.copy(start.add(end).multiplyScalar(0.5));
   object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  return object;
 }
 function bolts(parent, radius, z, n = 24, cx = 0, cy = 0) {
   for (let i = 0; i < n; i++) {
@@ -204,10 +205,15 @@ export function spacecraftModel(accent) {
   const hatch=mesh(group,new THREE.CircleGeometry(0.64,64),white,[0,0,-3.075]); hatch.rotation.y=Math.PI;
   box(group,[0.22,0.06,0.06],[0,0,-3.12],metal);
   bolts(group,0.72,-3.19,24);
-  for (const z of [-1.45,0.85,1.65]) ring(group,1.355,0.025,[0,0,z],z===0.85?stripe:metal);
+  const frame=new THREE.Group();
+  for (const z of [-1.45,0.85,1.65])for(let sector=0;sector<8;sector++) {
+    const arc=new THREE.TorusGeometry(1.355,0.025,8,8,Math.PI/4).rotateZ(sector*Math.PI/4).translate(0,0,z);
+    const part=mesh(frame,arc,z===0.85?stripe:metal);part.userData.mass=5.5;
+  }
   for(let i=0;i<16;i++) {
     const angle=i*Math.PI/8;
-    strut(group,[1.355*Math.cos(angle),1.355*Math.sin(angle),-1.4],[1.355*Math.cos(angle),1.355*Math.sin(angle),1.65],0.007,dark);
+    const rail=strut(frame,[1.355*Math.cos(angle),1.355*Math.sin(angle),-1.4],[1.355*Math.cos(angle),1.355*Math.sin(angle),1.65],0.007,dark);
+    rail.userData.mass=1.3;
     for(const z of [-1.3,0.72,1.5]) mesh(group,boltGeometry,metal,[1.36*Math.cos(angle),1.36*Math.sin(angle),z]);
   }
   for (const side of [-1,1]) {
@@ -245,6 +251,11 @@ export function spacecraftModel(accent) {
     throat.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),exhaust);
   }
   batch(group);
+  frame.updateMatrixWorld(true);
+  for(const part of [...frame.children]) {
+    part.geometry.applyMatrix4(part.matrixWorld);part.position.set(0,0,0);part.quaternion.identity();
+    part.name='capsule-frame';fragments.push(part);
+  }
   group.add(...fragments);
   const deformable=group.children.map(object=>({object,original:object.geometry.attributes.position.array.slice(),pristine:object.geometry.attributes.position.array.slice()}));
   const plumeMaterial=new THREE.ShaderMaterial({
@@ -277,7 +288,7 @@ export function spacecraftModel(accent) {
     lastCrush=-1;
   }
   function deform(body,burst) {
-    if(!body)for(const part of deformable)part.original.set(part.pristine);
+    if(!body){for(const part of deformable)part.original.set(part.pristine);lastCrush=-1;}
     panels.forEach((panel,i)=>{
       panel.position.set((i?1:-1)*(1.395+(burst?burst.distance:0)),0,0);
       if(body)panel.position.addScaledVector(normal,body.displacement(-3.2+5*(0-low)/(high-low)));
@@ -290,7 +301,8 @@ export function spacecraftModel(accent) {
         const point=new THREE.Vector3(original[i],original[i+1],original[i+2]);
         const projection=point.dot(normal), depth=-3.2+5*(projection-low)/(high-low);
         const angle=Math.atan2(point.dot(up),point.dot(across));
-        const buckle=body&&object.material===white?body.buckle(depth,angle):0;
+        const rigidity=object.material===white?1:object.material===metal?0.85:0.55;
+        const buckle=body?rigidity*body.buckle(depth,angle):0;
         if(body)point.addScaledVector(normal,Math.min(body.displacement(depth),0.4*(high-low)));
         point.addScaledVector(across,buckle*Math.cos(angle)).addScaledVector(up,buckle*Math.sin(angle));
         positions.setXYZ(i/3,point.x,point.y,point.z);

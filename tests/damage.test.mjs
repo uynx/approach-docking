@@ -19,6 +19,15 @@ test('fracture velocities spend a bounded energy budget without inventing moment
   assert.ok(Math.hypot(...momentum)<1e-9);
 });
 
+test('heavy frame sections and light skin share a finite fracture energy budget',()=>{
+  const masses=[5.5,5.5,1.3,2,2],velocities=fractureVelocities(masses.length,masses,6000);
+  const momentum=[0,0,0];let energy=0;
+  velocities.forEach((v,i)=>{v.forEach((x,j)=>momentum[j]+=masses[i]*x);energy+=0.5*masses[i]*Math.hypot(...v)**2;});
+  assert.ok(velocities.every(v=>v.every(Number.isFinite)));
+  assert.ok(Math.hypot(...momentum)<1e-8,'fracture does not propel the combined wreck');
+  assert.ok(energy>5900&&energy<=6000.000001);
+});
+
 test('fuel and oxidizer release finite chemical energy and cool while expanding in vacuum',()=>{
   const burst=new FuelExplosion(2,2.8713);
   assert.ok(burst.energy>3.2e7&&burst.energy<3.3e7);

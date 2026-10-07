@@ -77,14 +77,19 @@ export class PressureBurst {
 }
 
 export function fractureVelocities(count, mass, energy) {
-  const speed=Math.sqrt(2*Math.max(0,energy)/(count*mass)), result=[];
+  const masses=Array.isArray(mass)?mass:new Array(count).fill(mass),result=[];
   for(let i=0;i<Math.floor(count/2);i++) {
     const z=(i+0.5)/Math.floor(count/2)*2-1, angle=i*2.399963229728653;
-    const r=Math.sqrt(1-z*z), v=[r*Math.cos(angle)*speed,r*Math.sin(angle)*speed,z*speed];
+    const r=Math.sqrt(1-z*z), v=[r*Math.cos(angle),r*Math.sin(angle),z];
     result.push(v,v.map(x=>-x));
   }
   if(count%2)result.push([0,0,0]);
-  return result;
+  const total=masses.reduce((a,b)=>a+b,0),mean=[0,0,0];
+  result.forEach((v,i)=>v.forEach((x,j)=>mean[j]+=x*masses[i]/total));
+  const balanced=result.map(v=>v.map((x,j)=>x-mean[j]));
+  const kinetic=balanced.reduce((sum,v,i)=>sum+0.5*masses[i]*Math.hypot(...v)**2,0);
+  const speed=kinetic>0?Math.sqrt(Math.max(0,energy)/kinetic):0;
+  return balanced.map(v=>v.map(x=>x*speed));
 }
 
 export class FuelExplosion {
