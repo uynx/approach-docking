@@ -4,7 +4,7 @@ Two players dock spacecraft at separate ports on a station. Each player joins
 from a browser using a room code. The game includes solo practice and an in-game
 guide. Desktop keyboard controls come first; touch controls are not implemented.
 
-Ships start 18 metres ahead, offset sideways and tilted about 11 degrees. Translation jets provide 0.8 m/s² at the starting mass. Ships keep coasting and turning after
+Ships start 18 metres ahead, offset sideways and tilted 8–16 degrees in a random direction. Translation jets provide 0.8 m/s² at the starting mass. Ships keep coasting and turning after
 the pilot releases the controls. Opposite thrust slows them down. A successful dock beats a failed attempt. Successful docks
 score up to 1,000 points for precision, remaining fuel, and remaining time.
 
@@ -35,7 +35,7 @@ profile; the failure occurs while initializing graphics. Chromium also works.
 
 ```sh
 devenv shell -- ctest --test-dir build --output-on-failure
-node --test tests/damage.test.mjs tests/flight-view.test.mjs
+node --test tests/damage.test.mjs tests/flight-view.test.mjs tests/models.test.mjs tests/tutorial.test.mjs
 CHROMIUM_PATH=/path/to/chromium npm run test:browser
 ```
 
@@ -87,17 +87,32 @@ duty. Visible thrusters use the same force pairs and 50 ms pulse timing as the
 C++ dynamics. Right mouse drag moves the camera, C switches docking/chase view,
 and V recenters. T resets practice. The game opens directly into a full-screen
 chase view with a compact HUD. Multiplayer and help open on demand.
-A ray from the capsule nose stops at the first visible station surface. Its
+A ray from the capsule nose stops at the first visible solid surface. Its
 marker disappears when the ray misses. It indicates the nose direction, not
 a predicted ballistic trajectory. Docking plays a collar-light sequence, a
 surface capture pulse and an animated score award.
 
+Help → Watch flight tutorial runs an autopilot through legal thruster commands,
+then shows missed braking, an off-centre impact and a solar-wing strike.
+Captions explain each maneuver and show the active keys. Pause stops the flight
+and effects; Next example skips ahead; Take control starts a fresh practice flight.
+The clean approach runs at twice normal speed and earns its score from the shared
+physics. Completed examples remain visible for six seconds before advancing.
+
 ## Collision and damage model
 
-Contact samples sweep through the station's cylinder, cone, box and torus
-proxies. The earliest contact determines the normal and lever arms. An inelastic
+The build exports the displayed station, capsule and satellite triangles into
+the shared native/WASM collision engine. Swept triangle tests find the earliest
+contact, including rails, nozzles, dishes and collar lights. Empty truss bays
+stay empty. Broad-phase boxes accelerate the search; they never cause contact.
+The earliest contact determines the normal and lever arms. An inelastic
 impulse includes inverse mass and rotational inertia for both bodies. The capsule
 has a 2,120 kg dry mass plus remaining propellant; the station mass is 420,000 kg.
+Two capsules can collide with each other. The three 180 kg satellites have
+shared positions, attitudes and velocities, and recoil when a capsule hits them.
+Browser prediction processes both pilots in the server's slot order.
+Camera clearance and the nose ray query the current visible meshes, including
+detached hardware. Exhaust, plasma, flashes, guidance and hidden parts are excluded.
 
 J = (1 + e) vₙ / k. The impulse equals one plus restitution, times incoming normal
 contact speed, divided by effective inverse mass. Here k includes both bodies'
@@ -113,8 +128,12 @@ Assumed yield forces are 80 kN for docking collars, 20 kN for module shells and
 2 kN for solar panels. A solar-wing fracture consumes at most 700 J, including
 350 J reserved for fragment motion. A fast capsule can therefore tear through a
 panel. Torn panels are removed from collision geometry. Actual mesh sections
-leave the solar wings, capsule skin and damaged tanks. They inherit parent
-translation and rotational velocity. These fracture thresholds are game model
+leave the solar wings, capsule skin, structural frame and damaged tanks. Metal
+rings and stringers buckle with the skin. Severe compression can tear individual
+ring arcs and stringers away. They inherit parent
+translation and rotational velocity. Skin and frame fracture reserve 4% of the
+contact deformation energy. Mass-weighted debris velocities add zero net linear
+momentum and share their assigned translation/spin energy budget. These fracture thresholds are game model
 parameters, not measurements of a particular spacecraft.
 
 Cabin rupture spends stored ideal-gas energy on opposing hatch panels and venting.
@@ -134,7 +153,8 @@ from NIST formation enthalpies. There is no combustion without both reactants.
 tetroxide molecule to form three nitrogen molecules and four water molecules.
 The model partitions energy into expanding gas, heat and fragments. The hot cloud
 expands and fades rapidly in vacuum. A rendered flash approximates camera exposure.
-Tank shells and nearby capsule skin break away. There is no air shockwave in space.
+Tank shells and nearby capsule structure break away. A brief bright flash and
+expanding luminous ejecta fade within a second. There is no air shockwave in space.
 
 Sources: [NIST hydrazine](https://webbook.nist.gov/cgi/cbook.cgi?ID=C302012&Mask=2),
 [NIST nitrogen tetroxide](https://webbook.nist.gov/cgi/cbook.cgi?ID=C10544726&Mask=2),
@@ -144,11 +164,12 @@ Sources: [NIST hydrazine](https://webbook.nist.gov/cgi/cbook.cgi?ID=C302012&Mask
 
 Earth has its actual radius of 6,371 km and a nominal 400 km reference orbit.
 The orbital period follows Earth's gravitational parameter, approximately
-92.4 minutes. The surface moves with the orbital frame and sidereal Earth rotation.
+92.4 minutes. Each flight starts over a random longitude. The surface moves with
+the orbital frame and sidereal Earth rotation, including after docking. This
+equatorial orbit changes the longitude in view; it does not pass over the poles.
 Earth renders in a separate kilometer-scale pass to preserve nearby depth precision.
 The old 2 km flight boundary is removed. Ocean highlights, an illuminated
-atmosphere limb, the Moon, solar glare and decorative distant satellites add
-scene depth. The satellites are scenery and do not participate in collisions.
+atmosphere limb, the Moon, solar glare and distant satellites add scene depth.
 
 Atmospheric entry practice starts at 90 km with a descending trajectory and the
 heat shield forward. The physics applies central gravity and aerodynamic drag
@@ -181,20 +202,24 @@ it is not a fuel fire. The HUD reports altitude, airspeed and heat flux.
 ## Limits
 
 This is a simplified interactive physics model, not a validated structural or
-combustion simulation. Collision proxies retain their original shape except for
+combustion simulation. Shared physics meshes retain their original shape except for
 removed solar panels and ruptured station tanks. Deformation is analytic, not a
 finite-element solution. Visual debris does not change parent inertia or perform
 secondary collisions, orbital propagation or aerodynamic interaction. Fuel mass
 loss, fragment recoil and explosion coupling are approximations. Gas mixing,
 blast propagation through structures, ablation, thermal failure, fuel slosh and
-flexible docking mechanisms are not resolved. Ships do not collide with each
-other. Station recoil is integrated around the original reference orbit.
+flexible docking mechanisms are not resolved. The Moon is background imagery.
+Earth contact uses its spherical surface. Satellite dynamics currently handle
+capsule impacts; satellite-to-station and satellite-to-satellite impacts are
+not resolved. Station recoil is integrated around the original reference orbit.
 
 ## Code ownership
 
 | File | Responsibility |
 | --- | --- |
 | `src/physics.cpp` | Flight integration, contact impulses, station dynamics, capture and atmosphere |
+| `src/mesh.cpp` | Swept triangle contacts and mesh ray queries through a BVH |
+| `tools/export-meshes.mjs` | Exports collision triangles from the same factories used by the browser |
 | `src/state_io.hpp` | Ordered state fields shared by native JSON and WASM reads/restores |
 | `src/game.cpp` | Rooms, authoritative ticks, input validation, scoring and round lifecycle |
 | `src/wasm.cpp` | Browser interface to the shared physics |
@@ -205,6 +230,7 @@ other. Station recoil is integrated around the original reference orbit.
 | `web/damage.js` | Pure crush, pressure and fragment-energy calculations |
 | `web/damage-effects.js` | Impact history, detached meshes, bursts and round resets |
 | `web/flight-view.js` | Camera clearance, docking cues and thruster layout |
+| `web/tutorial.js` | Legal docking autopilot and crash lesson scenarios |
 
 Add state fields at the end of the native visitor and browser index map. Update
 state sizes and the protocol tests together. Browser startup checks the format
