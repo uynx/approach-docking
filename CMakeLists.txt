@@ -47,7 +47,7 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/web/physics.wasm
         -Wl,--export=restore_opponent -Wl,--export=set_opponent -Wl,--export=opponent_component
         -Wl,--export=guidance_component -Wl,--export=flight_alignment -Wl,--export=flight_spin -Wl,--export=flight_altitude -Wl,--export=flight_heat -Wl,--export=flight_airspeed
         -Wl,--export=judge_flight -Wl,--export=station_component -Wl,--export=restore_station
-        -Wl,--allow-undefined -Wl,-z,stack-size=65536
+        -Wl,--allow-undefined -Wl,-z,stack-size=262144
         ${CMAKE_SOURCE_DIR}/src/physics.cpp ${CMAKE_SOURCE_DIR}/src/mesh.cpp ${CMAKE_SOURCE_DIR}/src/wasm.cpp
         -o ${CMAKE_BINARY_DIR}/web/physics.wasm
     DEPENDS src/physics.cpp src/physics.hpp src/state_io.hpp src/wasm.cpp src/mesh.cpp src/mesh.hpp ${CMAKE_BINARY_DIR}/mesh-data.hpp VERBATIM)

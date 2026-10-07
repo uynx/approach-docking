@@ -21,6 +21,10 @@ int main() {
     const auto contact=collision::sweep(capsule,station,1.0/120);
     require(contact.hit&&contact.fraction>0.2&&contact.fraction<0.8,"swept mesh contact catches the collar before tunneling");
     require(contact.normal.z<-0.5,"the contact normal opposes the approach");
+    collision::Body panelShip{1,{-26.5,8,10.5},{},{0,0,100}},brokenStation=station;
+    require(collision::sweep(panelShip,station,1.0/120).hit,"intact solar tiles stop a swept capsule");
+    brokenStation.broken=255;
+    require(!collision::sweep(panelShip,brokenStation,1.0/120).hit,"removed solar tiles leave open space for the whole sweep");
     collision::Body one{1,{}},two{1,{4,0,0}};
     require(!collision::sweep(one,two,1.0/120).hit,"separate capsules do not collide");
     two.position.x=2.5;two.velocity.x=-100;

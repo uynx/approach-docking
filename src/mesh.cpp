@@ -2,7 +2,7 @@
 namespace collision {
 struct Triangle {int a,b,c,part;};
 struct Part {int panel,tank,kind;double mass;};
-struct Node {flight::Vec low,high;int left,right,start,count;};
+struct Node {flight::Vec low,high;int left,right,start,count,panels,tanks;bool permanent;};
 }
 #include "mesh-data.hpp"
 
@@ -151,33 +151,34 @@ bool active(const Motion& body,const Triangle& triangle) {
     const auto& part=parts[triangle.part];
     return !(part.panel>=0&&(body.body.broken&(1<<part.panel)))&&!(body.body.model==0&&part.tank>=0&&(body.body.ruptured&(1<<part.tank)));
 }
-bool interval(const Path* a,const Path* b,Vec axis,double& enter,double& exit,Vec& normal) {
+bool active(const Motion& body,const Node& node) {
+    return node.permanent||(node.panels&~body.body.broken)||(node.tanks&(body.body.model==0?~body.body.ruptured:-1));
+}
+bool interval(const Path* a,const Vec* velocityA,const Path* b,const Vec* velocityB,Vec axis,double& enter,double& exit,Vec& normal) {
     const double length=flight::length(axis);if(length<1e-14)return true;
-    axis=flight::scale(axis,1/length);
     double minA=1e100,maxA=-1e100,minB=1e100,maxB=-1e100,minVA=1e100,maxVA=-1e100,minVB=1e100,maxVB=-1e100;
     for(int i=0;i<3;i++) {
-        const double pa=dot(a[i].start,axis),pb=dot(b[i].start,axis),va=dot(sub(a[i].end,a[i].start),axis),vb=dot(sub(b[i].end,b[i].start),axis);
+        const double pa=dot(a[i].start,axis),pb=dot(b[i].start,axis),va=dot(velocityA[i],axis),vb=dot(velocityB[i],axis);
         minA=minA<pa?minA:pa;maxA=maxA>pa?maxA:pa;minB=minB<pb?minB:pb;maxB=maxB>pb?maxB:pb;
         minVA=minVA<va?minVA:va;maxVA=maxVA>va?maxVA:va;minVB=minVB<vb?minVB:vb;maxVB=maxVB>vb?maxVB:vb;
     }
-    const double gaps[]={maxA-minB+1e-6,maxB-minA+1e-6},rates[]={maxVA-minVB,maxVB-minVA};
+    const double gaps[]={maxA-minB+1e-6*length,maxB-minA+1e-6*length},rates[]={maxVA-minVB,maxVB-minVA};
     for(int i=0;i<2;i++) {
-        if(__builtin_fabs(rates[i])<1e-14){if(gaps[i]<0)return false;continue;}
+        if(__builtin_fabs(rates[i])<1e-14*length){if(gaps[i]<0)return false;continue;}
         const double crossing=-gaps[i]/rates[i];
-        if(rates[i]>0&&crossing>enter){enter=crossing;normal=flight::scale(axis,i?1:-1);}
+        if(rates[i]>0&&crossing>enter){enter=crossing;normal=flight::scale(axis,(i?1:-1)/length);}
         else if(rates[i]<0&&crossing<exit)exit=crossing;
         if(enter>exit)return false;
     }
     return true;
 }
-struct TriangleMotion {Path paths[3];Bounds box;Vec edges[3],normal;double speed=0;int part;};
+struct TriangleMotion {Path paths[3];Bounds box;Vec edges[3],velocities[3],normal;int part;};
 TriangleMotion prepare(const Motion& body,const Triangle& triangle) {
     TriangleMotion result;result.part=triangle.part;
     const int indices[]={triangle.a,triangle.b,triangle.c};
     for(int i=0;i<3;i++) {
         result.paths[i]=path(body,vertices[indices[i]]);
-        const double speed=flight::length(sub(result.paths[i].end,result.paths[i].start));
-        result.speed=result.speed>speed?result.speed:speed;
+        result.velocities[i]=sub(result.paths[i].end,result.paths[i].start);
         include(result.box,result.paths[i].start);include(result.box,result.paths[i].end);
     }
     for(int i=0;i<3;i++)result.edges[i]=sub(result.paths[(i+1)%3].start,result.paths[i].start);
@@ -187,12 +188,13 @@ bool triangle_contact(const TriangleMotion& a,const TriangleMotion& b,double lim
     if(!overlaps(a.box,b.box))return false;
     const auto* pa=a.paths;const auto* pb=b.paths;const auto* ea=a.edges;const auto* eb=b.edges;
     const Vec na=a.normal,nb=b.normal;double enter=0,exit=limit;Vec axisNormal{};
-    if(!interval(pa,pb,na,enter,exit,axisNormal)||!interval(pa,pb,nb,enter,exit,axisNormal))return false;
+    auto overlap=[&](Vec axis){return interval(pa,a.velocities,pb,b.velocities,axis,enter,exit,axisNormal);};
+    if(!overlap(na)||!overlap(nb))return false;
     for(int i=0;i<3;i++) {
-        if(!interval(pa,pb,cross(na,ea[i]),enter,exit,axisNormal)||!interval(pa,pb,cross(nb,eb[i]),enter,exit,axisNormal))return false;
-        for(int j=0;j<3;j++)if(!interval(pa,pb,cross(ea[i],eb[j]),enter,exit,axisNormal))return false;
+        if(!overlap(cross(na,ea[i]))||!overlap(cross(nb,eb[i])))return false;
+        for(int j=0;j<3;j++)if(!overlap(cross(ea[i],eb[j])))return false;
     }
-    const double speed=a.speed+b.speed;double t=enter;
+    double t=enter;
     for(int iteration=0;iteration<96;iteration++) {
         Vec aa[3],bb[3];for(int i=0;i<3;i++){aa[i]=blend(pa[i].start,pa[i].end,t);bb[i]=blend(pb[i].start,pb[i].end,t);}
         const auto gap=nearest(aa,bb);const double distance=__builtin_sqrt(gap.squared);
@@ -201,8 +203,12 @@ bool triangle_contact(const TriangleMotion& a,const TriangleMotion& b,double lim
             normal=flight::scale(normal,1/flight::length(normal));
             hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,a.part,b.part};return true;
         }
-        if(speed<1e-14||t>=exit)return false;
-        const double next=t+distance/speed;t=next<exit?next:exit;
+        if(t>=exit)return false;
+        const Vec separating=flight::scale(sub(gap.a,gap.b),1/distance);
+        double minA=1e100,maxB=-1e100;
+        for(int i=0;i<3;i++){const double va=dot(a.velocities[i],separating),vb=dot(b.velocities[i],separating);minA=minA<va?minA:va;maxB=maxB>vb?maxB:vb;}
+        const double closing=maxB-minA;if(closing<1e-14)return false;
+        const double next=t+distance/closing;t=next<exit?next:exit;
     }
     return false;
 }
@@ -211,18 +217,35 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
     const int models=sizeof(roots)/sizeof(roots[0]);
     if(bodyA.model<0||bodyA.model>=models||bodyB.model<0||bodyB.model>=models||!(dt>0))return result;
     const auto a=motion(bodyA,dt),b=motion(bodyB,dt);
+    if(!overlaps(swept_bounds(a,nodes[roots[bodyA.model]],1),swept_bounds(b,nodes[roots[bodyB.model]],1)))return result;
+    struct CachedBounds {int node=-1;double limit=0;Bounds box;};
+    CachedBounds boundsA[256],boundsB[256];
+    auto box=[&](const Motion& body,CachedBounds* cache,int node,double limit) {
+        auto& entry=cache[node%256];
+        if(entry.node!=node||entry.limit!=limit){entry.node=node;entry.limit=limit;entry.box=swept_bounds(body,nodes[node],limit);}
+        return entry.box;
+    };
+    struct Leaf {int node=-1,count=0;TriangleMotion triangles[8];};
+    Leaf leavesA[32],leavesB[32];
+    auto leaf=[&](const Motion& body,Leaf* cache,int id)->Leaf& {
+        auto& entry=cache[id%32];
+        if(entry.node!=id) {
+            entry.node=id;entry.count=0;const auto& node=nodes[id];
+            for(int i=node.start;i<node.start+node.count;i++)if(active(body,triangles[i]))entry.triangles[entry.count++]=prepare(body,triangles[i]);
+        }
+        return entry;
+    };
     struct Pair {int a,b;};Pair stack[128];int count=1,contacts=0;stack[0]={roots[bodyA.model],roots[bodyB.model]};
     while(count) {
         const auto pair=stack[--count];const auto& na=nodes[pair.a];const auto& nb=nodes[pair.b];
+        if(!active(a,na)||!active(b,nb))continue;
         const double limit=clamp(result.fraction+0.00001,0,1);
-        const auto ba=swept_bounds(a,na,limit),bb=swept_bounds(b,nb,limit);if(!overlaps(ba,bb))continue;
+        const auto ba=box(a,boundsA,pair.a,limit),bb=box(b,boundsB,pair.b,limit);if(!overlaps(ba,bb))continue;
         if(na.count&&nb.count) {
-            TriangleMotion ta[8],tb[8];int countA=0,countB=0;
-            for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))ta[countA++]=prepare(a,triangles[i]);
-            for(int i=nb.start;i<nb.start+nb.count;i++)if(active(b,triangles[i]))tb[countB++]=prepare(b,triangles[i]);
-            for(int i=0;i<countA;i++)for(int j=0;j<countB;j++) {
+            const auto& la=leaf(a,leavesA,pair.a);const auto& lb=leaf(b,leavesB,pair.b);
+            for(int i=0;i<la.count;i++)for(int j=0;j<lb.count;j++) {
                 Contact hit;
-                if(!triangle_contact(ta[i],tb[j],limit,hit))continue;
+                if(!triangle_contact(la.triangles[i],lb.triangles[j],limit,hit))continue;
                 if(hit.fraction<result.fraction-0.00001){result=hit;result.point={};result.normal={};contacts=0;}
                 if(hit.fraction<=result.fraction+0.00001){result.hit=true;result.fraction=result.fraction<hit.fraction?result.fraction:hit.fraction;result.partA=hit.partA;result.partB=hit.partB;result.point=flight::add(result.point,hit.point);result.normal=flight::add(result.normal,hit.normal);contacts++;}
             }
