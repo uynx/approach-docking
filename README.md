@@ -44,6 +44,40 @@ reconnection, input validation, and room departures. The network test uses real
 WebSockets. The WASM test compares a flight trajectory against the native build.
 Browser tests cover rendering, controls, room joins, and blocked graphics.
 
+## Performance
+
+Station and capsule parts share material batches. Original meshes still own
+damage and collision queries; render copies add no colliders. Changed vertices
+upload only when geometry changes, and detached parts leave holes in the batches.
+Camera and nose rays use refitted triangle trees. Shared collision sweeps cache
+triangle motion, use spatial splits and skip removed hardware.
+
+The scene caps its drawing buffer at 2,073,600 pixels, including after resize,
+and uses 2,048-pixel shadows. Earth retains its 16,384 × 8,192 texture.
+One packed WASM read supplies each displayed frame. HTTP assets stream from disk
+and revalidate with ETags, so unchanged textures remain cached across reloads.
+
+```sh
+CHROMIUM_PATH=/path/to/chromium node tools/benchmark.mjs /tmp/approach-performance.json
+REALTIME=1 GPU_BACKEND=hardware CHROMIUM_PATH=/path/to/chromium node tools/benchmark.mjs
+```
+
+The benchmark reports its graphics backend, draw counts, frame callback costs
+and collision tick timings. Default Chromium uses SwiftShader software graphics.
+Controlled callback timings measure CPU and command submission, not sustained
+hardware FPS. `REALTIME=1` samples actual animation frame intervals in a fresh page.
+`GPU_BACKEND=hardware` requests OpenGL; check the reported backend for fallback.
+`PROBE=no-shadows` or `PROBE=no-render` isolates rendering costs.
+`PHYSICS_BUDGET_MS` optionally fails if a scenario's 95th-percentile tick exceeds
+the supplied budget. Dense wing strikes can still exceed the 8.33 ms physics interval.
+
+The October 7 Asahi software-rendering comparison reduced intact draw calls
+from 610 to 48. A collar-impact tick fell from 26.4 ms to 6.7 ms; the maximum
+wing-strike tick fell from 28.3 ms to 10.7 ms. These are local samples, not FPS guarantees.
+An accelerated Asahi AGX sample at 1280 × 720 averaged approximately 43 FPS on
+approach and 36 FPS through a wing strike. The strike's worst frame callback
+was 192 ms, so severe impact hitches remain measurable.
+
 ## Deploy on Render
 
 The Docker image includes both the native server and browser assets. It listens
