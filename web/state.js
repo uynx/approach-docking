@@ -53,4 +53,5 @@ export const Station = Object.freeze({
   wz: 12,
   brokenPanels: 13,
   rupturedTanks: 14,
+  ...Object.fromEntries(Array.from({length:3},(_,i)=>['x','y','z','vx','vy','vz','qw','qx','qy','qz','wx','wy','wz'].map((field,j)=>[`satellite${i}${field}`,15+i*13+j])).flat()),
 });

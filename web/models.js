@@ -12,7 +12,29 @@ const boltGeometry = new THREE.CylinderGeometry(0.025, 0.025, 0.024, 6).rotateX(
 
 function mesh(parent, geometry, material, pos = [0, 0, 0]) {
   const object = new THREE.Mesh(geometry, material);
+  object.userData.solid=!material.isShaderMaterial;
   object.position.set(...pos); parent.add(object); return object;
+}
+export function solidMeshes(root,exclude) {
+  const result=[];
+  function collect(object) {
+    if(!object.visible||object===exclude)return;
+    if(object.isMesh&&object.userData.solid)result.push(object);
+    for(const child of object.children)collect(child);
+  }
+  collect(root);return result;
+}
+export function clipMeshCamera(origin,desired,meshes,clearance=0.25) {
+  const delta=desired.clone().sub(origin),length=delta.length();if(!length)return origin.clone();
+  const ray=new THREE.Raycaster(origin,delta.multiplyScalar(1/length),0,length),materials=new Map();
+  for(const object of meshes)if(!materials.has(object.material)){materials.set(object.material,object.material.side);object.material.side=THREE.DoubleSide;}
+  let hit;
+  try{hit=ray.intersectObjects(meshes,false)[0];}finally{for(const [material,side] of materials)material.side=side;}
+  if(!hit)return desired.clone();
+  const normal=hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+  const facing=normal.dot(delta);
+  if(facing>0)return hit.point.clone().addScaledVector(normal,clearance);
+  return origin.clone().addScaledVector(delta,Math.max(0,hit.distance-clearance/Math.max(0.01,-facing)));
 }
 const box = (p, size, pos, mat = metal) => mesh(p, new THREE.BoxGeometry(...size), mat, pos);
 const tube = (p, r, length, pos, mat = metal) => mesh(p, new THREE.CylinderGeometry(r, r, length, 48).rotateX(Math.PI / 2), mat, pos);
@@ -75,10 +97,9 @@ export function stationModel(anisotropy = 1, textures = true) {
   solar.map=cellTexture;solar.color.setHex(0xffffff);solar.roughness=0.55;
   }
 
-  const group = new THREE.Group(), colliders = [], fragments=[];group.name='station';
+  const group = new THREE.Group(), fragments=[];group.name='station';
   const module = (x, y, z, radius, length) => {
     tube(group, radius, length, [x, y, z], white);
-    colliders.push([x-radius, y-radius, z-length/2, x+radius, y+radius, z+length/2]);
     for (let dz = -length / 2 + 0.3; dz < length / 2; dz += 1.2) {
       ring(group, radius + 0.015, 0.04, [x, y, z+dz], metal);
       for (const angle of [0.5, 2.6, 3.65, 5.75]) {
@@ -102,7 +123,6 @@ export function stationModel(anisotropy = 1, textures = true) {
     }
     strut(group, [x, 0.8, -12], [x+3, 0.8, -14], 0.06);
   }
-  colliders.push([-33, -1, -14.2, 33, 1, -11.8]);
   for (const x of [-18, 18]) {
     module(x, 0, -9, 2.8, 12);
     for(const side of [-1,1]) {
@@ -120,8 +140,6 @@ export function stationModel(anisotropy = 1, textures = true) {
     ring(group, 0.72, 0.07, [x, 0, -0.07]);
     ring(group, 0.86, 0.035, [x, 0, -0.09], white);
     mesh(group, new THREE.CircleGeometry(0.65, 64), dark, [x, 0, -0.32]);
-    colliders.push([x-0.95,-0.95,-3,x+0.95,0.95,0]);
-    colliders.push([x-2.8,-2.8,-3,x+2.8,2.8,-1]);
     bolts(group, 0.84, -0.035, 24, x);
     for (let i = 0; i < 6; i++) {
       const angle = i * Math.PI/3;
@@ -145,23 +163,27 @@ export function stationModel(anisotropy = 1, textures = true) {
           const tile=new THREE.Mesh(new THREE.BoxGeometry(1.9,14/6,0.09,4,4,1).translate(sx-2.85+u*1.9,dy*8-7+(v+0.5)*14/6,-13),solar);
           tile.name='station-panel';tile.userData.panel=panel;fragments.push(tile);
         }
-        const bounds=[sx-3.85,dy*8-7,-13.15,sx+3.85,dy*8+7,-12.85];bounds.panel=panel;colliders.push(bounds);
         for (const edge of [-1,1]) strut(group,[sx+edge*3.85,dy*1,-13],[sx+edge*3.85,dy*15,-13],0.045);
       }
     }
     box(group, [5,6,0.15], [x,6,-19],radiator);
     for (let j=-9;j<=9;j++) box(group,[0.025,6,0.022],[x+j*0.25,6,-18.91],metal);
     strut(group,[x,2,-12],[x,6,-19],0.14);
-    colliders.push([x-2.5,3,-19.2,x+2.5,9,-18.8]);
   }
   const dish = mesh(group,new THREE.SphereGeometry(1.8,40,20,0,Math.PI*2,0,Math.PI/2.8),radiator,[0,5,-15]);
   dish.rotation.z = -0.5;
   strut(group,[0,3,-15],[0,5,-15],0.12);
   for (const x of [-1,1]) strut(group,[x,5.6,-15],[0,7,-15],0.025);
-  colliders.push([-2,3.5,-17,2,7.2,-13]);
   batch(group);
   group.add(...fragments);
+  const collarLights=new THREE.Group();collarLights.name='collar-lights';
+  for(const port of [-18,18])for(let i=0;i<12;i++) {
+    const angle=i*Math.PI/6;
+    const light=new THREE.Mesh(new THREE.SphereGeometry(0.065,8,6),new THREE.MeshBasicMaterial({color:0x78c7ff}));
+    light.position.set(port+Math.cos(angle)*1.04,Math.sin(angle)*1.04,-0.09);light.userData.port=port;light.userData.index=i;collarLights.add(light);
+  }
   const rest=group.children.map(object=>({object,positions:object.geometry.attributes.position.array.slice()}));
+  group.add(collarLights);
   let previous='';
   function deform(impacts) {
     const key=impacts.map(hit=>hit.crush.toFixed(6)).join(':');
@@ -182,7 +204,15 @@ export function stationModel(anisotropy = 1, textures = true) {
       output.needsUpdate=true;object.geometry.computeVertexNormals();object.geometry.computeBoundingSphere();
     }
   }
-  return { group, colliders, deform, fragments };
+  group.traverse(part=>{if(part.isMesh)part.userData.solid=true;});
+  return { group, deform, fragments,collarLights };
+}
+
+export function satelliteModel() {
+  const group=new THREE.Group();group.name='satellite';
+  box(group,[2,2,3],[0,0,0],gold);
+  for(const side of [-1,1])box(group,[7,3,0.07],[side*4.7,0,0],solar);
+  return {group};
 }
 
 export function spacecraftModel(accent) {
@@ -313,5 +343,6 @@ export function spacecraftModel(accent) {
     }
   }
   function commitDamage() {for(const part of deformable)part.original.set(part.object.geometry.attributes.position.array);lastCrush=-1;}
+  group.traverse(part=>{if(part.isMesh)part.userData.solid=!part.material.isShaderMaterial;});
   return {group,plumes,deform,damageDirection,fragments,commitDamage,pressurePanels:panels};
 }

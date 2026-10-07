@@ -107,6 +107,13 @@ int main() {
     near(pair[0].velocity.x+pair[1].velocity.x,0,1e-8,"capsule-to-capsule impact preserves linear momentum");
     near(flight::length(station.velocity),0,1e-12,"a collision away from the station cannot push the station");
     std::cout<<"PASS two-capsule mesh collision\n";
+    station={};station.satellites[0]={{0,0,-33.2},{},{},{}};
+    pair[0]=aligned();pair[0].position={14,0,-30};pair[0].velocity={50,0,0};
+    for(int i=0;i<12;i++)flight::advance_system(pair,inputs,1,station,flight::step_seconds,false);
+    if(pair[0].status!=2||pair[0].impact_body!=2)throw std::runtime_error("the capsule physically hits the satellite mesh");
+    near(2200*pair[0].velocity.x+180*station.satellites[0].velocity.x,110000,1e-8,"satellite contact preserves shared linear momentum");
+    if(station.satellites[0].velocity.x<=0)throw std::runtime_error("a struck satellite recoils instead of acting like a fixed wall");
+    std::cout<<"PASS capsule-to-satellite mesh collision\n";
     station={}; pair[0]={};pair[1]={};
     pair[0].status=2;pair[0].impact_normal={0,0,-1};pair[0].impact_speed=3;
     pair[0].impact_point={-17,0,0};pair[0].impact_arm={1,0,3.2};pair[0].velocity={0,0,3};

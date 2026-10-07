@@ -26,6 +26,7 @@ export function createDamageEffects(scene,station,[own,other]) {
       const geometry=part.geometry.clone();geometry.computeBoundingBox();geometry.computeBoundingSphere();
       const center=geometry.boundingBox.getCenter(new THREE.Vector3());geometry.translate(-center.x,-center.y,-center.z);
       const fragment=new THREE.Mesh(geometry,part.material);fragment.name=part.name+'-fragment';
+      fragment.userData.solid=true;
       fragment.castShadow=true;fragment.receiveShadow=true;
       fragment.position.copy(part.localToWorld(center));part.getWorldQuaternion(fragment.quaternion);scene.add(fragment);part.visible=false;
       const v=new THREE.Vector3(...velocities[i]).add(velocity).add(new THREE.Vector3().crossVectors(owner.angularVelocity||new THREE.Vector3(),fragment.position.clone().sub(owner.centerOfMass||owner.group.position)));
@@ -57,7 +58,7 @@ export function createDamageEffects(scene,station,[own,other]) {
       if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
       const damageSpeed=state[Flight.impactPart]>=0?Math.min(state[Flight.impactSpeed],Math.sqrt(700/Math.max(1,state[Flight.impactMass]))):state[Flight.impactSpeed];
       const stationImpact=(state[Flight.impactBody]||0)===0;
-      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;ship.frameFractured=false;
+      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:state[Flight.impactBody]===2?180:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;ship.frameFractured=false;
       ship.normal=new THREE.Vector3(state[Flight.normalX],state[Flight.normalY],-state[Flight.normalZ]);
       ship.point=new THREE.Vector3(state[Flight.impactX],state[Flight.impactY],-state[Flight.impactZ]);
       ship.localNormal=ship.normal.clone().applyQuaternion(quaternion(state).invert());

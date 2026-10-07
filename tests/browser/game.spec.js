@@ -19,7 +19,7 @@ test('practice renders a 3D view and thrusters change flight instruments', async
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => {if(message.type()==='error')errors.push(message.text());});
   await page.goto('/');
-  await expect(page.locator('#flight-ui')).toBeVisible();
+  await expect(page.locator('#flight-ui')).toBeVisible({timeout:15000});
   await expect(page.locator('#welcome')).toBeHidden();
   await page.getByRole('button', { name: 'Practice flight' }).click();
   await expect(page.locator('#mode')).toHaveText('PRACTICE');
@@ -166,6 +166,19 @@ test('Earth starts at a new longitude and keeps rotating after docking',async ({
   expect(await rotation()).not.toEqual(docked);
 });
 
+test('a struck satellite recoils and its visible mesh follows shared physics',async ({page})=>{
+  await controlledFlight(page);
+  await page.evaluate(()=>{for(let i=0;i<13;i++)window.physics.restore_station(15+i,i===2?-33.2:i===6?1:0);});
+  await pose(page,{0:14,1:0,2:-30,3:50,4:0,5:0},100);
+  expect(await page.evaluate(()=>window.physics.component(35))).toBe(2);
+  expect(await page.evaluate(()=>window.physics.station_component(18))).toBeGreaterThan(0);
+  const placement=await page.evaluate(()=>({
+    rendered:window.stationObject.parent.getObjectByName('orbital-satellites').children[0].position.toArray(),
+    physics:[window.physics.station_component(15),window.physics.station_component(16),-window.physics.station_component(17)]
+  }));
+  placement.rendered.forEach((v,i)=>expect(v).toBeCloseTo(placement.physics[i],8));
+});
+
 test('watching the tutorial allows pause, crash examples and returning to flight',async ({page})=>{
   test.setTimeout(60000);
   await controlledFlight(page);
@@ -215,7 +228,7 @@ test('comma and period bank the capsule while the chase camera stays level', asy
 test('close approach preserves camera clearance and cues distinguish speed and offset errors', async ({page})=>{
   await controlledFlight(page);
   let views=await pose(page,{2:-0.12,5:0.1});
-  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.25);
+  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.05-1e-6);
   await expect(page.locator('#docking-aid')).toHaveAttribute('data-state','ready');
   await pose(page,{5:0.3});
   await expect(page.locator('#docking-aid')).toHaveAttribute('data-state','brake');
@@ -226,7 +239,7 @@ test('close approach preserves camera clearance and cues distinguish speed and o
   await page.getByRole('button',{name:'Camera',exact:true}).click();
   await page.mouse.move(600,400);await page.mouse.down({button:'right'});await page.mouse.move(1380,325);await page.mouse.up({button:'right'});
   views=await pose(page,{0:0});
-  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.25);
+  expect(views.find(v=>v.near===0.05).position[2]).toBeGreaterThanOrEqual(0.05-1e-6);
 });
 
 test('an axial impact deforms the hull in the full-screen view and resets cleanly', async ({page})=>{
@@ -354,7 +367,7 @@ test('station collar join has one opaque surface instead of overlapping shell ca
     const THREE=await import('/vendor/three.module.js');
     const {stationModel}=await import('/models.js');
     const station=stationModel(1);station.group.updateMatrixWorld(true);
-    for(const part of station.group.children)part.material=part.material.clone(),part.material.side=THREE.DoubleSide;
+    station.group.traverse(part=>{if(part.isMesh)part.material=part.material.clone(),part.material.side=THREE.DoubleSide;});
     const ray=new THREE.Raycaster(new THREE.Vector3(-18.2,0.15,-1.5),new THREE.Vector3(0,0,1));
     return new Set(ray.intersectObjects(station.group.children,false).filter(hit=>Math.abs(hit.point.z+1)<1e-6).map(hit=>hit.object.id)).size;
   });

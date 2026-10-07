@@ -14,6 +14,12 @@ Quat mul(Quat a, Quat b) {
         a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};
 }
 Quat conjugate(Quat a) { return {a.w,-a.x,-a.y,-a.z}; }
+Satellite initial_satellite(int i) {
+    const Vec positions[]={{-140,32,380},{180,90,600},{65,-38,270}};
+    const double x=-(0.2+i*0.7)/2,y=-i/2.0,z=(0.4+i)/2;
+    const Quat q=mul(mul({__builtin_cos(x),__builtin_sin(x),0,0},{__builtin_cos(y),0,__builtin_sin(y),0}),{__builtin_cos(z),0,0,__builtin_sin(z)});
+    return {positions[i],{positions[i].z*0.0007,0,-positions[i].x*0.0007},{0,0,0.012},q};
+}
 Vec rotate(Quat q, Vec a) {
     const auto r = mul(mul(q,{0,a.x,a.y,a.z}),conjugate(q));
     return {r.x,r.y,r.z};
@@ -277,6 +283,32 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
             states[i].omega=add(station.omega,rotate(conjugate(station.attitude),{mean_motion(),0,0}));
         } else states[i].velocity=add(states[i].velocity,scale(impulse,-1));
         advance(states[i],controls[i],dt,orbit);
+    }
+    const Vec satellite_inertia={1000,3000,3000};
+    for(auto& target:station.satellites) {
+        target.velocity=add(target.velocity,scale(impulse,-1));target.position=add(target.position,scale(target.velocity,dt));
+        integrate_attitude(target.attitude,target.omega,satellite_inertia,dt,false);
+        for(int i=0;i<count;i++) {
+            auto& s=states[i];if(s.status==1||s.status==4)continue;
+            const Vec spin=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
+            const Vec center=add(s.position,{(i^first_slot)?18.0:-18.0,0,-3.2});
+            if(length(add(center,scale(target.position,-1)))>12+(length(s.velocity)+length(target.velocity))*dt)continue;
+            const collision::Body capsule{1,center,s.attitude,s.velocity,spin},satellite{2,target.position,target.attitude,target.velocity,target.omega};
+            const auto hit=collision::sweep(capsule,satellite,dt);if(!hit.hit)continue;
+            const Vec arm=add(hit.point,scale(add(center,scale(s.velocity,dt*(hit.fraction-1))),-1));
+            const Vec target_arm=add(hit.point,scale(add(target.position,scale(target.velocity,dt*(hit.fraction-1))),-1));
+            const Vec relative=add(add(s.velocity,cross(rotate(s.attitude,spin),arm)),scale(add(target.velocity,cross(rotate(target.attitude,target.omega),target_arm)),-1));
+            const double speed=maximum(0,-dot(relative,hit.normal));if(speed<0.0001)continue;
+            const Vec response=inverse_inertia(s.attitude,inertia(s.fuel),cross(arm,hit.normal));
+            const Vec target_response=inverse_inertia(target.attitude,satellite_inertia,cross(target_arm,hit.normal));
+            const double effective=1/(1/(2120+s.fuel)+1/180.0+dot(hit.normal,add(cross(response,arm),cross(target_response,target_arm))));
+            const double impulse=1.08*effective*speed;
+            s.position=add(s.position,scale(s.velocity,dt*(hit.fraction-1)));target.position=add(target.position,scale(target.velocity,dt*(hit.fraction-1)));
+            s.velocity=add(s.velocity,scale(hit.normal,impulse/(2120+s.fuel)));target.velocity=add(target.velocity,scale(hit.normal,-impulse/180));
+            s.omega=add(s.omega,rotate(conjugate(s.attitude),scale(response,impulse)));target.omega=add(target.omega,rotate(conjugate(target.attitude),scale(target_response,-impulse)));
+            s.impact_point=hit.point;s.impact_normal=hit.normal;s.impact_arm=arm;s.impact_speed=speed;s.impact_age=0;s.impact_mass=effective;
+            s.impact_part=-1;s.crush_force=20000;s.station_share=0.5;s.impact_body=2;s.burned_fuel=0;s.station_burned_fuel=0;s.status=2;++s.impact_sequence;
+        }
     }
     if(count==2) {
         collision::Body bodies[2];

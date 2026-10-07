@@ -3,7 +3,8 @@
 static flight::State state;
 static flight::State opponent;
 static bool opponent_present=false;
-static flight::Station station;
+// wasm-ld repeats dynamic global constructors when an export is called.
+static flight::Station station{{},{},{},{},0,0,{}};
 extern "C" {
 void reset_flight(unsigned seed) { state=flight::initial(seed);opponent=flight::initial(seed);station={};opponent_present=false; }
 int state_size() { return flight::state_size; }

@@ -25,7 +25,7 @@ bool bounds(const Node& node,Vec origin,Vec direction,double limit) {
 }
 Hit ray(int model,Vec origin,Vec direction,double limit,int broken,int ruptured) {
     Hit hit;hit.distance=limit;
-    if(model<0||model>1||limit<0)return hit;
+    if(model<0||model>=static_cast<int>(sizeof(roots)/sizeof(roots[0]))||limit<0)return hit;
     int stack[64],count=1;stack[0]=roots[model];
     while(count) {
         const auto& node=nodes[stack[--count]];
@@ -204,7 +204,8 @@ bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const T
 }
 Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
     Contact result;
-    if(bodyA.model<0||bodyA.model>1||bodyB.model<0||bodyB.model>1||!(dt>0))return result;
+    const int models=sizeof(roots)/sizeof(roots[0]);
+    if(bodyA.model<0||bodyA.model>=models||bodyB.model<0||bodyB.model>=models||!(dt>0))return result;
     const auto a=motion(bodyA,dt),b=motion(bodyB,dt);
     struct Pair {int a,b;};Pair stack[128];int count=1,contacts=0;stack[0]={roots[bodyA.model],roots[bodyB.model]};
     while(count) {

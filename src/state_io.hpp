@@ -2,7 +2,7 @@
 #include "physics.hpp"
 
 namespace flight {
-constexpr int state_size = 36, station_size = 15;
+constexpr int state_size = 36, station_size = 54;
 
 template<class T, class Visitor>
 void visit_state(T& s, Visitor visit) {
@@ -61,6 +61,13 @@ void visit_station(T& s, Visitor visit) {
     visit(12, s.omega.z);
     visit(13, s.broken_panels);
     visit(14, s.ruptured_tanks);
+    for(int i=0;i<3;i++) {
+        auto& body=s.satellites[i];const int at=15+i*13;
+        visit(at,body.position.x);visit(at+1,body.position.y);visit(at+2,body.position.z);
+        visit(at+3,body.velocity.x);visit(at+4,body.velocity.y);visit(at+5,body.velocity.z);
+        visit(at+6,body.attitude.w);visit(at+7,body.attitude.x);visit(at+8,body.attitude.y);visit(at+9,body.attitude.z);
+        visit(at+10,body.omega.x);visit(at+11,body.omega.y);visit(at+12,body.omega.z);
+    }
 }
 
 template<class T>

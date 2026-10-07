@@ -1,8 +1,8 @@
 import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
-import { shipPosition, clipCamera, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
+import { shipPosition, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
 import { createDamageEffects } from './damage-effects.js';
-import { stationModel, spacecraftModel } from './models.js';
+import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera } from './models.js';
 
 export function createScene(canvas) {
   const context = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
@@ -53,12 +53,8 @@ export function createScene(canvas) {
   moon.name='moon';moon.position.set(2800,1200,-19500);moon.rotation.y=1.7;sky.add(moon);
   const satellites=new THREE.Group();satellites.name='orbital-satellites';scene.add(satellites);
   for(let i=0;i<3;i++) {
-    const satellite=new THREE.Group();satellite.position.set([-140,180,65][i],[32,90,-38][i],[-380,-600,-270][i]);
+    const satellite=satelliteModel().group;satellite.position.set([-140,180,65][i],[32,90,-38][i],[-380,-600,-270][i]);
     satellite.rotation.set(0.2+i*0.7,i,0.4+i);
-    const hull=new THREE.Mesh(new THREE.BoxGeometry(2,2,3),new THREE.MeshStandardMaterial({color:0xc4b47b,metalness:0.7,roughness:0.45}));satellite.add(hull);
-    for(const side of [-1,1]) {
-      const wing=new THREE.Mesh(new THREE.BoxGeometry(7,3,0.07),new THREE.MeshStandardMaterial({color:0x294264,metalness:0.55,roughness:0.4}));wing.position.x=side*4.7;satellite.add(wing);
-    }
     satellites.add(satellite);
   }
   const ready = Promise.all([
@@ -90,13 +86,7 @@ export function createScene(canvas) {
   const raycaster=new THREE.Raycaster();
   const capturePulse=new THREE.Mesh(new THREE.RingGeometry(0.84,0.94,64),new THREE.MeshBasicMaterial({color:0x8ff9da,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));
   capturePulse.name='capture-pulse';capturePulse.visible=false;scene.add(capturePulse);
-  const collarLights=new THREE.Group();collarLights.name='collar-lights';
-  for(const port of [-18,18])for(let i=0;i<12;i++) {
-    const angle=i*Math.PI/6;
-    const light=new THREE.Mesh(new THREE.SphereGeometry(0.065,8,6),new THREE.MeshBasicMaterial({color:0x78c7ff}));
-    light.position.set(port+Math.cos(angle)*1.04,Math.sin(angle)*1.04,-0.09);light.userData.port=port;light.userData.index=i;collarLights.add(light);
-  }
-  station.group.add(collarLights);
+  const collarLights=station.collarLights;
   let lastStatus=0,capturedAt=-Infinity,orbitTime=0,earthLongitude=Math.random()*Math.PI*2;
   let dockingCamera=false,lookYaw=0,lookPitch=0,lastNow;
   const damageEffects=createDamageEffects(scene,station,[own,other]);
@@ -128,6 +118,11 @@ export function createScene(canvas) {
     render(state,opponent,slot,active,commands,now,stationState=[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],thermal={altitude:400000,heat:0,airspeed:0}) {
       const dt=lastNow===undefined?0:Math.max(0,Math.min(0.1,(now-lastNow)/1000));lastNow=now;
       const stationOffset=new THREE.Vector3(stationState[Station.x],stationState[Station.y],-stationState[Station.z]);
+      satellites.children.forEach((satellite,i)=>{
+        const at=15+i*13;if(stationState.length<at+13)return;
+        satellite.position.set(stationState[at],stationState[at+1],-stationState[at+2]).add(stationOffset);
+        satellite.quaternion.set(-stationState[at+7],-stationState[at+8],stationState[at+9],stationState[at+6]);
+      });
       const stationQ=new THREE.Quaternion(-stationState[Station.qx],-stationState[Station.qy],stationState[Station.qz],stationState[Station.qw]);
       const stationPivot=new THREE.Vector3(0,0,-13);
       station.group.quaternion.copy(stationQ);
@@ -148,7 +143,7 @@ export function createScene(canvas) {
       for(const light of collarLights.children) {
         const captured=active&&state[Flight.status]===1&&light.userData.port===portX;
         light.material.color.setHex(captured?0x8ff9da:0x78c7ff);
-        light.visible=captured||Math.sin(now/900-light.userData.index*Math.PI/6)>-0.35;
+        light.material.color.multiplyScalar(captured||Math.sin(now/900-light.userData.index*Math.PI/6)>-0.35?1:0.2);
       }
       plasma.visible=active&&thermal.altitude<120000&&thermal.heat>20000&&state[Flight.status]!==4;
       canvas.dataset.plasma=String(plasma.visible);
@@ -168,8 +163,9 @@ export function createScene(canvas) {
         const q=quaternion(state), origin=own.group.position.clone();
         const offset=new THREE.Vector3(0,dockingCamera?0:4,dockingCamera?-2.65:13);
         if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
-        camera.position.set(...clipCamera(station.group.worldToLocal(origin.clone()).toArray(),station.group.worldToLocal(origin.clone().add(offset)).toArray(),station.colliders.filter(box=>box.panel===undefined||!(stationState[Station.brokenPanels]&(1<<box.panel)))));
-        station.group.localToWorld(camera.position);
+        scene.updateMatrixWorld(true);
+        const solids=solidMeshes(scene,own.group);
+        camera.position.copy(clipMeshCamera(origin,origin.clone().add(offset),solids));
         camera.up.set(0,1,0);
         if(dockingCamera) camera.up.applyQuaternion(q);
         const aim=dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
@@ -181,7 +177,7 @@ export function createScene(canvas) {
         if(!state[Flight.status]&&thermal.altitude>150000) {
           const nose=new THREE.Vector3(0,0,-3.2).applyQuaternion(q).add(origin);
           raycaster.set(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q));
-          const hit=raycaster.intersectObjects(station.group.children.filter(part=>part.isMesh&&part.visible),false)[0];
+          const hit=raycaster.intersectObjects(solids,false)[0];
           if(hit) {
             const normal=hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
             noseRay.geometry.attributes.position.setXYZ(0,nose.x,nose.y,nose.z);
@@ -193,7 +189,7 @@ export function createScene(canvas) {
           }
         }
         canvas.dataset.damage=body?'crushing':'none';
-        if(body) document.getElementById('impact').textContent=`IMPACT ${(body.initialEnergy/1000).toFixed(2)} kJ · CRUSH ${(body.permanentCrush*100).toFixed(1)} cm · PORT ${(body.stationCrush*100).toFixed(1)} cm${own.burst?' · HULL RUPTURE '+(own.burst.pressure/1000).toFixed(1)+' kPa':''}`;
+        if(body) document.getElementById('impact').textContent=`IMPACT ${(body.deformationEnergy/1000).toFixed(2)} kJ · CRUSH ${(body.capsuleCrush*100).toFixed(1)} cm${(state[Flight.impactBody]||0)===0?' · STATION '+(body.stationCrush*100).toFixed(1)+' cm':''}${own.burst?' · HULL RUPTURE '+(own.burst.pressure/1000).toFixed(1)+' kPa':''}`;
         else document.getElementById('impact').textContent='';
       } else {
         own.group.visible=true;other.group.visible=false;own.plumes.forEach(p=>{p.visible=false;});
@@ -207,8 +203,6 @@ export function createScene(canvas) {
       renderer.setScissorTest(false);renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();
       skyCamera.position.copy(camera.position).multiplyScalar(0.001);skyCamera.quaternion.copy(camera.quaternion);
       orbitTime=Math.max(orbitTime+dt,state?.[Flight.elapsed]||0);
-      satellites.rotation.y=orbitTime*0.0007;
-      satellites.children.forEach((satellite,i)=>{satellite.rotation.z=0.4+i+orbitTime*0.012;});
       sky.backgroundRotation.x=orbitTime*meanMotion;
       const sunlight=sunDirection.clone().applyAxisAngle(new THREE.Vector3(1,0,0),orbitTime*meanMotion);
       sunGlow.position.copy(sunlight).multiplyScalar(20000);

@@ -7,12 +7,30 @@ import * as THREE from 'three';
 const source=(await readFile(new URL('../web/models.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./flight-view.js',new URL('../web/flight-view.js',import.meta.url).href);
-const {spacecraftModel,stationModel}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const effectsSource=(await readFile(new URL('../web/damage-effects.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./state.js',new URL('../web/state.js',import.meta.url).href)
   .replace('./damage.js',new URL('../web/damage.js',import.meta.url).href);
 const {createDamageEffects}=await import('data:text/javascript;base64,'+Buffer.from(effectsSource).toString('base64'));
+
+test('camera clearance uses actual truss rails while leaving empty bays open',()=>{
+  const station=stationModel(1,false);station.group.updateMatrixWorld(true);
+  const from=new THREE.Vector3(-27.5,0,-11),to=new THREE.Vector3(-27.5,0,-15);
+  assert.deepEqual(clipMeshCamera(from,to,solidMeshes(station.group)).toArray(),to.toArray());
+  const rail=clipMeshCamera(new THREE.Vector3(-30,0.8,-11),new THREE.Vector3(-30,0.8,-15),solidMeshes(station.group));
+  assert.ok(rail.z>-12,'the camera stops before the physical rail');
+});
+
+test('solid queries exclude hidden parts, guidance and exhaust while including detached hardware',()=>{
+  const ship=spacecraftModel(0x6daaa7),world=new THREE.Group();world.add(ship.group);
+  ship.plumes[0].visible=true;
+  const hidden=ship.fragments[0];hidden.visible=false;
+  const cue=new THREE.Mesh(new THREE.PlaneGeometry(50,50),new THREE.MeshBasicMaterial());world.add(cue);
+  const detached=new THREE.Mesh(hidden.geometry.clone(),hidden.material);detached.userData.solid=true;world.add(detached);
+  const meshes=solidMeshes(world);
+  assert.ok(meshes.includes(detached));assert.ok(!meshes.includes(hidden));assert.ok(!meshes.includes(cue));assert.ok(!meshes.includes(ship.plumes[0]));
+});
 
 test('a collision between capsules crushes both craft without denting the station',()=>{
   const world=new THREE.Scene(),own=spacecraftModel(0x6daaa7),other=spacecraftModel(0xc6a06c),station=stationModel(1,false);

@@ -17,7 +17,12 @@ struct State {
     double impact_sequence = 0, impact_part = -1, burned_fuel = 0, station_burned_fuel = 0;
     int impact_body = 0;
 };
-struct Station { Vec position, velocity, omega; Quat attitude; int broken_panels = 0, ruptured_tanks = 0; };
+struct Satellite {Vec position,velocity,omega;Quat attitude;};
+Satellite initial_satellite(int);
+struct Station {
+    Vec position, velocity, omega; Quat attitude; int broken_panels = 0, ruptured_tanks = 0;
+    Satellite satellites[3]={initial_satellite(0),initial_satellite(1),initial_satellite(2)};
+};
 struct Controls { double axis[6] = {}; };
 constexpr double step_seconds = 1.0 / 120.0;
 constexpr double orbit_radius = 6771000;

@@ -42,6 +42,16 @@ for(const slot of [0,1]) {
   assert.equal(sim.component(15),2);assert.equal(sim.opponent_component(15),2);
 }
 console.log('PASS both pilot slots predict the same two-capsule collision as the server');
+sim.reset_flight();
+for(const [i,v] of Object.entries({0:14,1:0,2:-30,3:50,4:0,5:0,6:1,7:0,8:0,9:0,10:Math.sqrt(3.986004418e14/6771000**3),11:0,12:0}))sim.restore(Number(i),v);
+for(let i=0;i<13;i++)sim.restore_station(15+i,i===2?-33.2:i===6?1:0);
+for(let i=0;i<12;i++){sim.step_flight(0,0,0,0,0,0,0);sim.judge_flight(0);}
+execFileSync(native,['satellite'],{encoding:'utf8'}).trim().split('\n').map(Number).forEach((value,index)=>{
+  const actual=index<sim.state_size()?sim.component(index):sim.station_component(index-sim.state_size());
+  assert.ok(Math.abs(actual-value)<1e-7,`satellite impact parity at ${index}: ${actual} vs ${value}`);
+});
+assert.equal(sim.component(35),2);assert.ok(sim.station_component(18)>0,'a satellite gains the opposing recoil');
+console.log('PASS the visible satellite collider transfers the same recoil in native and WASM physics');
 const { Flight, Station } = await import('../web/state.js');
 assert.equal(sim.state_size(), Object.keys(Flight).length);
 assert.equal(sim.station_size(), Object.keys(Station).length);

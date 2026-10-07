@@ -1,14 +1,14 @@
 import {registerHooks} from 'node:module';
 import {writeFile} from 'node:fs/promises';
 registerHooks({resolve(specifier,context,next){return next(specifier==='/vendor/three.module.js'?'three':specifier,context);}});
-const {stationModel,spacecraftModel}=await import('../web/models.js');
+const {stationModel,spacecraftModel,satelliteModel}=await import('../web/models.js');
 
 const vertices=[],triangles=[],parts=[],nodes=[],roots=[];
-for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7)]) {
+for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7),satelliteModel()]) {
   model.group.updateMatrixWorld(true);
   const faces=[];
   model.group.traverse(object=>{
-    if(!object.isMesh||object.material.isShaderMaterial)return;
+    if(!object.isMesh||!object.userData.solid)return;
     const geometry=object.geometry.clone().applyMatrix4(object.matrixWorld),position=geometry.attributes.position;
     const indices=[],unique=new Map(),part=parts.length;
     for(let i=0;i<position.count;i++) {
