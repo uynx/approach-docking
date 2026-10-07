@@ -19,6 +19,9 @@ int main() {
     if(std::hypot(start.position.x,start.position.y)<2 || flight::alignment(start)<8 || flight::alignment(start)>16)
         throw std::runtime_error("new approaches require translation and attitude correction");
     near(flight::relative_spin(start),0,1e-9,"off-axis start has no uncommanded spin");
+    auto dish=aligned();dish.position={18,5.2,-5};dish.velocity.z=50;
+    for(int i=0;i<120&&!dish.status;i++){flight::advance(dish,{},flight::step_seconds,false);flight::judge(dish);}
+    if(dish.status!=2)throw std::runtime_error("the visible antenna dish participates in physical contact");
     flight::State s;
     s.position = {10, 20, 30};
     s.velocity = {2, -1, 0.5};

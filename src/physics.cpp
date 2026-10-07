@@ -1,4 +1,5 @@
 #include "physics.hpp"
+#include "mesh.hpp"
 namespace flight {
 Vec add(Vec a, Vec b) { return {a.x+b.x, a.y+b.y, a.z+b.z}; }
 Vec scale(Vec a, double b) { return {a.x*b, a.y*b, a.z*b}; }
@@ -66,37 +67,6 @@ bool dockable(const State& s) {
 }
 double absolute(double x) { return x < 0 ? -x : x; }
 double maximum(double a,double b) { return a>b?a:b; }
-double minimum(double a,double b) { return a<b?a:b; }
-double box_distance(Vec p,Vec center,Vec half) {
-    const Vec d={absolute(p.x-center.x)-half.x,absolute(p.y-center.y)-half.y,absolute(p.z-center.z)-half.z};
-    return length({maximum(d.x,0),maximum(d.y,0),maximum(d.z,0)})+minimum(maximum(d.x,maximum(d.y,d.z)),0);
-}
-double cylinder_distance(Vec p,double x,double radius,double front,double back) {
-    const double a=__builtin_sqrt((p.x-x)*(p.x-x)+p.y*p.y)-radius;
-    const double b=absolute(p.z-(front+back)*0.5)-(back-front)*0.5;
-    return __builtin_sqrt(maximum(a,0)*maximum(a,0)+maximum(b,0)*maximum(b,0))+minimum(maximum(a,b),0);
-}
-double station_distance(Vec p,int broken=0,int ruptured=0) {
-    double d=cylinder_distance(p,0,3.6,8,22);
-    d=minimum(d,box_distance(p,{0,0,13},{33,0.9,1.1}));
-    for(int port=0;port<2;++port) {
-        const double x=port?18.0:-18.0;
-        d=minimum(d,cylinder_distance(p,x,2.8,3,15));
-        if(!(ruptured&(1<<port)))for(int side=-1;side<=1;side+=2)d=minimum(d,length(add(p,{-x-side*0.9,3.1,-13}))-0.6);
-        const double radial=__builtin_sqrt((p.x-x)*(p.x-x)+p.y*p.y);
-        const double cone=(radial-0.9-0.95*(p.z-1))/__builtin_sqrt(1+0.95*0.95);
-        d=minimum(d,maximum(cone,maximum(1-p.z,p.z-3)));
-        d=minimum(d,cylinder_distance(p,x,0.9,0.2,1));
-        d=minimum(d,cylinder_distance(p,x,0.65,0.305,0.33));
-        d=minimum(d,__builtin_sqrt((radial-0.72)*(radial-0.72)+(p.z-0.07)*(p.z-0.07))-0.07);
-        for(int side=-1;side<=1;side+=2) for(int vertical=-1;vertical<=1;vertical+=2) {
-            const int panel=port*4+(side>0?2:0)+(vertical>0?1:0);
-            if(!(broken&(1<<panel)))d=minimum(d,box_distance(p,{x+side*8.5,vertical*8.0,13},{3.8,7,0.06}));
-        }
-        d=minimum(d,box_distance(p,{x,6,19},{2.5,3,0.075}));
-    }
-    return d;
-}
 Vec inertia(double fuel);
 const Vec station_inertia={2e7,1.5e8,1.5e8};
 Vec inverse_inertia(Quat q,Vec inert,Vec v) {
@@ -107,62 +77,22 @@ bool station_contact(State& s,int slot,const Station& station) {
     const Vec center=add(s.position,{slot?18.0:-18.0,0,-3.2});
     const Vec relative=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
     if(length(center)>80+length(s.velocity)*step_seconds)return false;
-    double earliest=2;Vec hit_point{},hit_normal{},hit_arm{};int contacts=0;
-    auto distance_to_station=[&](Vec p) {return station_distance(add(rotate(conjugate(station.attitude),add(p,{0,0,-13})),{0,0,13}),station.broken_panels,station.ruptured_tanks);};
-    auto contact=[&](Vec local,double radius) {
-        const Vec arm=rotate(s.attitude,local), end=add(center,arm);
-        const Vec velocity=add(s.velocity,rotate(s.attitude,cross(relative,local)));
-        const Vec delta=scale(velocity,step_seconds), start=add(end,scale(delta,-1));
-        const double distance=length(delta);
-        double t=0;
-        for(int i=0;i<12;++i) {
-            const Vec p=add(start,scale(delta,t));
-            const double gap=distance_to_station(p)-radius;
-            if(gap<=0.00001) {
-                constexpr double h=0.0001;
-                Vec normal={distance_to_station(add(p,{h,0,0}))-distance_to_station(add(p,{-h,0,0})),
-                    distance_to_station(add(p,{0,h,0}))-distance_to_station(add(p,{0,-h,0})),
-                    distance_to_station(add(p,{0,0,h}))-distance_to_station(add(p,{0,0,-h}))};
-                const double n=length(normal);
-                normal=n>1e-12?scale(normal,1/n):Vec{0,0,-1};
-                if(t<earliest-0.0001) {earliest=t;contacts=0;hit_point={};hit_normal={};hit_arm={};}
-                if(t<=earliest+0.0001) {
-                    hit_point=add(hit_point,add(p,scale(normal,-radius)));hit_normal=add(hit_normal,normal);
-                    hit_arm=add(hit_arm,add(arm,scale(normal,-radius)));++contacts;
-                }
-                return;
-            }
-            if(t>=1 || distance<1e-12) break;
-            t=minimum(1,t+maximum(gap/distance,0.0001));
-        }
-    };
-    for(int ring=0;ring<7;++ring) {
-        const double z[]={-1.7,-0.7,0.5,1.4,2.1,2.65,3.145};
-        const double r[]={1.29,1.30,1.30,1.30,0.96,0.64,0.72};
-        for(int a=0;a<24;++a) {
-            const double angle=a*6.283185307179586/24;
-            contact({r[ring]*__builtin_cos(angle),r[ring]*__builtin_sin(angle),z[ring]},ring==6?0.055:0.045);
-        }
-    }
-    contact({0,0,-0.4},1.3);contact({0,0,0.7},1.25);
-    if(!contacts)return false;
-    s.impact_point=scale(hit_point,1.0/contacts);s.impact_arm=scale(hit_arm,1.0/contacts);
-    s.impact_normal=scale(hit_normal,1/maximum(length(hit_normal),1e-12));
+    const collision::Body capsule{1,center,s.attitude,s.velocity,relative};
+    const collision::Body target{0,{0,0,13},station.attitude,{},station.omega,station.broken_panels,station.ruptured_tanks};
+    const auto hit=collision::sweep(capsule,target,step_seconds);
+    if(!hit.hit)return false;
+    s.position=add(s.position,scale(s.velocity,step_seconds*(hit.fraction-1)));
+    s.impact_point=hit.point;s.impact_normal=hit.normal;
+    s.impact_arm=add(hit.point,scale(add(s.position,{slot?18.0:-18.0,0,-3.2}),-1));
     const Vec station_arm=add(s.impact_point,{0,0,-13});
     const Vec contact_velocity=add(add(s.velocity,cross(rotate(s.attitude,relative),s.impact_arm)),
         scale(cross(rotate(station.attitude,station.omega),station_arm),-1));
     s.impact_speed=maximum(0,-dot(contact_velocity,s.impact_normal));
-    s.position=add(s.position,scale(s.velocity,step_seconds*(earliest-1)));
     const Vec p=add(rotate(conjugate(station.attitude),station_arm),{0,0,13});
-    const bool panel=absolute(p.y)>1 && absolute(p.z-13)<0.2;
-    const bool collar=p.z<1.2;
+    s.impact_part=collision::panel(hit.partB);
+    const bool panel=s.impact_part>=0,collar=p.z<1.2;
     s.crush_force=panel?2000:collar?80000:20000;
     s.station_share=panel?0.95:collar?0.15:0.55;
-    s.impact_part=-1;
-    if(panel)for(int port=0;port<2;++port)for(int side=-1;side<=1;side+=2) {
-        const double x=(port?18:-18)+side*8.5;
-        if(absolute(p.x-x)<=3.85)s.impact_part=port*4+(side>0?2:0)+(p.y>0?1:0);
-    }
     s.impact_age=0;s.impact_mass=0;s.burned_fuel=0;s.station_burned_fuel=0;++s.impact_sequence;
     return true;
 }

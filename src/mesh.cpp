@@ -8,6 +8,7 @@ struct Node {flight::Vec low,high;int left,right,start,count;};
 
 namespace collision {
 using flight::Vec;
+int panel(int part){return part>=0&&part<static_cast<int>(sizeof(parts)/sizeof(parts[0]))?parts[part].panel:-1;}
 Vec sub(Vec a,Vec b){return flight::add(a,flight::scale(b,-1));}
 Vec cross(Vec a,Vec b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 double dot(Vec a,Vec b){return a.x*b.x+a.y*b.y+a.z*b.z;}
@@ -223,7 +224,7 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
             else{stack[count++]={pair.a,nb.left};stack[count++]={pair.a,nb.right};}
         }
     }
-    if(contacts){result.point=flight::scale(result.point,1.0/contacts);result.normal=flight::scale(result.normal,1/flight::length(result.normal));}
+    if(contacts){result.point=flight::scale(result.point,1.0/contacts);const double length=flight::length(result.normal);result.normal=length>1e-14?flight::scale(result.normal,1/length):Vec{0,0,-1};}
     return result;
 }
 }
