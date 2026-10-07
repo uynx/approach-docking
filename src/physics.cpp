@@ -155,7 +155,7 @@ Derivative derivative(const State& s, Vec force, Vec torque, double fuel_rate, b
             -g*radius.y+earth_mu/(orbit_radius*orbit_radius)+n*n*s.position.y+2*n*s.velocity.z,
             -g*radius.z+n*n*s.position.z-2*n*s.velocity.y});
         const Vec airflow=air_velocity(s);
-        acc=add(acc,scale(airflow,-0.5*air_density(altitude(s))*1.5*3.141592653589793*1.35*1.35*length(airflow)/mass));
+        acc=add(acc,scale(airflow,-0.5*air_density(r-6371000)*1.5*3.141592653589793*1.35*1.35*length(airflow)/mass));
         const Vec radial = rotate(conjugate(s.attitude),scale(radius,1/r));
         torque = add(torque,scale(cross(radial,{inert.x*radial.x,inert.y*radial.y,inert.z*radial.z}),3*g));
     }
@@ -182,9 +182,9 @@ void integrate_attitude(Quat& q,Vec& omega,Vec inert,double dt,bool orbit) {
     Vec half=add(omega,{gyro.x/inert.x*dt/2,gyro.y/inert.y*dt/2,gyro.z/inert.z*dt/2});
     Vec relative=half;
     if(orbit)relative=add(relative,scale(rotate(conjugate(q),{mean_motion(),0,0}),-1));
-    const double angle=length(relative)*dt;
+    const double speed=length(relative),angle=speed*dt;
     if(angle>1e-14) {
-        const Vec axis=scale(relative,__builtin_sin(angle/2)/length(relative));
+        const Vec axis=scale(relative,__builtin_sin(angle/2)/speed);
         q=mul(q,{__builtin_cos(angle/2),axis.x,axis.y,axis.z});
         const double norm=__builtin_sqrt(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z);
         q={q.w/norm,q.x/norm,q.y/norm,q.z/norm};

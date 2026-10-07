@@ -170,32 +170,36 @@ bool interval(const Path* a,const Path* b,Vec axis,double& enter,double& exit,Ve
     }
     return true;
 }
-bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const Triangle& tb,double limit,Contact& hit) {
-    const int ia[]={ta.a,ta.b,ta.c},ib[]={tb.a,tb.b,tb.c};Path pa[3],pb[3];
-    double va=0,vb=0;
+struct TriangleMotion {Path paths[3];Bounds box;Vec edges[3],normal;double speed=0;int part;};
+TriangleMotion prepare(const Motion& body,const Triangle& triangle) {
+    TriangleMotion result;result.part=triangle.part;
+    const int indices[]={triangle.a,triangle.b,triangle.c};
     for(int i=0;i<3;i++) {
-        pa[i]=path(a,vertices[ia[i]]);pb[i]=path(b,vertices[ib[i]]);
-        const double da=flight::length(sub(pa[i].end,pa[i].start)),db=flight::length(sub(pb[i].end,pb[i].start));
-        va=va>da?va:da;vb=vb>db?vb:db;
+        result.paths[i]=path(body,vertices[indices[i]]);
+        const double speed=flight::length(sub(result.paths[i].end,result.paths[i].start));
+        result.speed=result.speed>speed?result.speed:speed;
+        include(result.box,result.paths[i].start);include(result.box,result.paths[i].end);
     }
-    Bounds ba,bb;
-    for(int i=0;i<3;i++){include(ba,pa[i].start);include(ba,pa[i].end);include(bb,pb[i].start);include(bb,pb[i].end);}
-    if(!overlaps(ba,bb))return false;
-    Vec ea[3],eb[3];for(int i=0;i<3;i++){ea[i]=sub(pa[(i+1)%3].start,pa[i].start);eb[i]=sub(pb[(i+1)%3].start,pb[i].start);}
-    const Vec na=cross(ea[0],ea[1]),nb=cross(eb[0],eb[1]);double enter=0,exit=limit;Vec axisNormal{};
+    for(int i=0;i<3;i++)result.edges[i]=sub(result.paths[(i+1)%3].start,result.paths[i].start);
+    result.normal=cross(result.edges[0],result.edges[1]);return result;
+}
+bool triangle_contact(const TriangleMotion& a,const TriangleMotion& b,double limit,Contact& hit) {
+    if(!overlaps(a.box,b.box))return false;
+    const auto* pa=a.paths;const auto* pb=b.paths;const auto* ea=a.edges;const auto* eb=b.edges;
+    const Vec na=a.normal,nb=b.normal;double enter=0,exit=limit;Vec axisNormal{};
     if(!interval(pa,pb,na,enter,exit,axisNormal)||!interval(pa,pb,nb,enter,exit,axisNormal))return false;
     for(int i=0;i<3;i++) {
         if(!interval(pa,pb,cross(na,ea[i]),enter,exit,axisNormal)||!interval(pa,pb,cross(nb,eb[i]),enter,exit,axisNormal))return false;
         for(int j=0;j<3;j++)if(!interval(pa,pb,cross(ea[i],eb[j]),enter,exit,axisNormal))return false;
     }
-    const double speed=va+vb;double t=enter;
+    const double speed=a.speed+b.speed;double t=enter;
     for(int iteration=0;iteration<96;iteration++) {
         Vec aa[3],bb[3];for(int i=0;i<3;i++){aa[i]=blend(pa[i].start,pa[i].end,t);bb[i]=blend(pb[i].start,pb[i].end,t);}
         const auto gap=nearest(aa,bb);const double distance=__builtin_sqrt(gap.squared);
         if(distance<=0.000001) {
             Vec normal=distance>1e-10?flight::scale(sub(gap.a,gap.b),1/distance):flight::length(axisNormal)>0?axisNormal:cross(sub(bb[1],bb[0]),sub(bb[2],bb[0]));
             normal=flight::scale(normal,1/flight::length(normal));
-            hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,ta.part,tb.part};return true;
+            hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,a.part,b.part};return true;
         }
         if(speed<1e-14||t>=exit)return false;
         const double next=t+distance/speed;t=next<exit?next:exit;
@@ -213,14 +217,18 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
         const double limit=clamp(result.fraction+0.00001,0,1);
         const auto ba=swept_bounds(a,na,limit),bb=swept_bounds(b,nb,limit);if(!overlaps(ba,bb))continue;
         if(na.count&&nb.count) {
-            for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))for(int j=nb.start;j<nb.start+nb.count;j++)if(active(b,triangles[j])) {
+            TriangleMotion ta[8],tb[8];int countA=0,countB=0;
+            for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))ta[countA++]=prepare(a,triangles[i]);
+            for(int i=nb.start;i<nb.start+nb.count;i++)if(active(b,triangles[i]))tb[countB++]=prepare(b,triangles[i]);
+            for(int i=0;i<countA;i++)for(int j=0;j<countB;j++) {
                 Contact hit;
-                if(!triangle_contact(a,b,triangles[i],triangles[j],limit,hit))continue;
+                if(!triangle_contact(ta[i],tb[j],limit,hit))continue;
                 if(hit.fraction<result.fraction-0.00001){result=hit;result.point={};result.normal={};contacts=0;}
                 if(hit.fraction<=result.fraction+0.00001){result.hit=true;result.fraction=result.fraction<hit.fraction?result.fraction:hit.fraction;result.partA=hit.partA;result.partB=hit.partB;result.point=flight::add(result.point,hit.point);result.normal=flight::add(result.normal,hit.normal);contacts++;}
             }
         } else {
-            const double sa=flight::length(sub(ba.high,ba.low)),sb=flight::length(sub(bb.high,bb.low));
+            const auto da=sub(ba.high,ba.low),db=sub(bb.high,bb.low);
+            const double sa=dot(da,da),sb=dot(db,db);
             if(!na.count&&(nb.count||sa>sb)){stack[count++]={na.left,pair.b};stack[count++]={na.right,pair.b};}
             else{stack[count++]={pair.a,nb.left};stack[count++]={pair.a,nb.right};}
         }
