@@ -7,12 +7,23 @@ import * as THREE from 'three';
 const source=(await readFile(new URL('../web/models.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./flight-view.js',new URL('../web/flight-view.js',import.meta.url).href);
-const {spacecraftModel}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const {spacecraftModel,stationModel}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const effectsSource=(await readFile(new URL('../web/damage-effects.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./state.js',new URL('../web/state.js',import.meta.url).href)
   .replace('./damage.js',new URL('../web/damage.js',import.meta.url).href);
 const {createDamageEffects}=await import('data:text/javascript;base64,'+Buffer.from(effectsSource).toString('base64'));
+
+test('a collision between capsules crushes both craft without denting the station',()=>{
+  const world=new THREE.Scene(),own=spacecraftModel(0x6daaa7),other=spacecraftModel(0xc6a06c),station=stationModel(1,false);
+  station.offset=new THREE.Vector3();station.velocity=new THREE.Vector3();own.velocity=new THREE.Vector3();other.velocity=new THREE.Vector3();
+  const surfaces=[];station.group.traverse(p=>{if(p.isMesh)surfaces.push([p,p.geometry.attributes.position.array.slice()]);});
+  const effects=createDamageEffects(world,station,[own,other]),states=[new Array(36).fill(0),new Array(36).fill(0)];
+  for(const state of states)Object.entries({6:1,15:2,19:-1,20:30,24:1,28:1100,29:20000,30:0.5,31:1,32:-1,35:1}).forEach(([i,v])=>state[i]=v);
+  effects.update(states,new Array(15).fill(0),0);
+  assert.ok(own.body.capsuleCrush>0.2&&other.body.capsuleCrush>0.2,'both impact participants lose hull shape');
+  for(const [mesh,before] of surfaces)assert.deepEqual(mesh.geometry.attributes.position.array,before,'the uninvolved station keeps its geometry');
+});
 
 test('a fuel rupture tears frame sections and produces a short expanding flash in vacuum',()=>{
   const world=new THREE.Scene(),own=spacecraftModel(0x6daaa7),other=spacecraftModel(0xc6a06c);

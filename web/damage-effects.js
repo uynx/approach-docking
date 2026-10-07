@@ -56,16 +56,17 @@ export function createDamageEffects(scene,station,[own,other]) {
     if(state[Flight.status]===2&&state[Flight.impactAge]>0&&key!==ship.crashKey&&Math.hypot(...state.slice(17,20))>0.5) {
       if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
       const damageSpeed=state[Flight.impactPart]>=0?Math.min(state[Flight.impactSpeed],Math.sqrt(700/Math.max(1,state[Flight.impactMass]))):state[Flight.impactSpeed];
-      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,420000,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;ship.frameFractured=false;
+      const stationImpact=(state[Flight.impactBody]||0)===0;
+      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;ship.frameFractured=false;
       ship.normal=new THREE.Vector3(state[Flight.normalX],state[Flight.normalY],-state[Flight.normalZ]);
       ship.point=new THREE.Vector3(state[Flight.impactX],state[Flight.impactY],-state[Flight.impactZ]);
       ship.localNormal=ship.normal.clone().applyQuaternion(quaternion(state).invert());
       ship.damageDirection(ship.localNormal);
       const point=station.group.worldToLocal(ship.point.clone().add(station.offset));
       const normal=ship.normal.clone().applyQuaternion(station.group.quaternion.clone().invert());
-      const hit={point,normal,crush:0};dents.push(hit);ship.dent=hit;
+      const hit={point,normal,crush:0};if(stationImpact)dents.push(hit);ship.dent=hit;
       explode(ship,state[Flight.burnedFuel],ship.group.position,ship.velocity);
-      explode(station,state[Flight.stationBurnedFuel],ship.point.clone().add(station.offset),station.velocity);
+      if(stationImpact)explode(station,state[Flight.stationBurnedFuel],ship.point.clone().add(station.offset),station.velocity);
     }
     if(ship.body) {
       ship.body.time=state[Flight.impactAge];

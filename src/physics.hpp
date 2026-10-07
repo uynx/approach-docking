@@ -15,6 +15,7 @@ struct State {
     double impact_mass = 0, crush_force = 80000, station_share = 0.15;
     double impact_speed = 0, impact_age = 0;
     double impact_sequence = 0, impact_part = -1, burned_fuel = 0, station_burned_fuel = 0;
+    int impact_body = 0;
 };
 struct Station { Vec position, velocity, omega; Quat attitude; int broken_panels = 0, ruptured_tanks = 0; };
 struct Controls { double axis[6] = {}; };

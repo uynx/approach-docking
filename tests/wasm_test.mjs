@@ -19,12 +19,29 @@ sim.reset_flight();sim.restore(0,0.35);sim.restore(1,0.2);sim.restore(2,-1);sim.
 for(let i=0;i<120;i++){sim.step_flight(0,0,0,0,0,0,0);sim.judge_flight(0);}
 const collision=execFileSync(native,['collision'],{encoding:'utf8'}).trim().split('\n').map(Number);
 collision.forEach((value,index)=>{
-  const actual=index<35?sim.component(index):sim.station_component(index-35);
+  const actual=index<sim.state_size()?sim.component(index):sim.station_component(index-sim.state_size());
   assert.ok(Math.abs(actual-value)<1e-7,`collision parity mismatch ${index}: ${actual} vs ${value}`);
 });
 assert.equal(sim.component(15),2);
 assert.ok(Math.hypot(sim.station_component(10),sim.station_component(11),sim.station_component(12))>0);
 console.log('PASS native/WASM collision, torque, fracture metadata and station motion agree');
+const pair=execFileSync(native,['pair'],{encoding:'utf8'}).trim().split('\n').map(Number);
+for(const slot of [0,1]) {
+  sim.reset_flight();sim.set_opponent(1);
+  for(const [i,write] of [sim.restore,sim.restore_opponent].entries()) {
+    const globalSlot=i^slot;
+    const pose={0:globalSlot?-16:16,1:0,2:-30,3:globalSlot?-50:50,4:0,5:0,6:1,7:0,8:0,9:0,10:Math.sqrt(3.986004418e14/(6771000**3)),11:0,12:0};
+    for(const [index,value] of Object.entries(pose))write(Number(index),value);
+  }
+  for(let i=0;i<24;i++)sim.step_flight(0,0,0,0,0,0,slot);
+  pair.forEach((value,index)=>{
+    const size=sim.state_size(),body=Math.floor(index/size),field=index%size;
+    const actual=body<2?(body===slot?sim.component(field):sim.opponent_component(field)):sim.station_component(index-2*size);
+    assert.ok(Math.abs(actual-value)<1e-7,`two-capsule parity at slot ${slot}, field ${index}: ${actual} vs ${value}`);
+  });
+  assert.equal(sim.component(15),2);assert.equal(sim.opponent_component(15),2);
+}
+console.log('PASS both pilot slots predict the same two-capsule collision as the server');
 const { Flight, Station } = await import('../web/state.js');
 assert.equal(sim.state_size(), Object.keys(Flight).length);
 assert.equal(sim.station_size(), Object.keys(Station).length);

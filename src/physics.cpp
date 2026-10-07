@@ -93,7 +93,7 @@ bool station_contact(State& s,int slot,const Station& station) {
     const bool panel=s.impact_part>=0,collar=p.z<1.2;
     s.crush_force=panel?2000:collar?80000:20000;
     s.station_share=panel?0.95:collar?0.15:0.55;
-    s.impact_age=0;s.impact_mass=0;s.burned_fuel=0;s.station_burned_fuel=0;++s.impact_sequence;
+    s.impact_age=0;s.impact_mass=0;s.burned_fuel=0;s.station_burned_fuel=0;s.impact_body=0;++s.impact_sequence;
     return true;
 }
 State port_relative(const State& s,int slot,const Station& station) {
@@ -236,7 +236,7 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
     Vec impulse{};
     for(int i=0;i<count;++i) {
         auto& s=states[i];
-        if(s.status!=2 || length(s.impact_normal)<0.5 || s.impact_age>0)continue;
+        if(s.status!=2 || length(s.impact_normal)<0.5 || s.impact_age>0 || s.impact_body!=0)continue;
         const Vec n=s.impact_normal,arm=s.impact_arm,station_arm=add(s.impact_point,{0,0,-13});
         const Vec ship_response=inverse_inertia(s.attitude,inertia(s.fuel),cross(arm,n));
         const Vec station_response=inverse_inertia(station.attitude,station_inertia,cross(station_arm,n));
@@ -269,7 +269,7 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
     integrate_attitude(station.attitude,station.omega,station_inertia,dt,false);
     for(int i=0;i<count;++i) {
         if(states[i].status==1) {
-            const double x=i+first_slot?18.0:-18.0;
+            const double x=(i^first_slot)?18.0:-18.0;
             const Vec arm=rotate(station.attitude,{x,0,-16.2});
             states[i].position=add(add(arm,{0,0,13}),{-x,0,3.2});
             states[i].attitude=station.attitude;
@@ -277,6 +277,45 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
             states[i].omega=add(station.omega,rotate(conjugate(station.attitude),{mean_motion(),0,0}));
         } else states[i].velocity=add(states[i].velocity,scale(impulse,-1));
         advance(states[i],controls[i],dt,orbit);
+    }
+    if(count==2) {
+        collision::Body bodies[2];
+        for(int i=0;i<2;i++) {
+            const auto& s=states[i];
+            const Vec spin=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
+            bodies[i]={1,add(s.position,{(i^first_slot)?18.0:-18.0,0,-3.2}),s.attitude,s.velocity,spin};
+        }
+        const auto hit=collision::sweep(bodies[0],bodies[1],dt);
+        if(!hit.hit)return;
+        const Vec center0=add(bodies[0].position,scale(bodies[0].velocity,dt*(hit.fraction-1)));
+        const Vec center1=add(bodies[1].position,scale(bodies[1].velocity,dt*(hit.fraction-1)));
+        const Vec arm0=add(hit.point,scale(center0,-1)),arm1=add(hit.point,scale(center1,-1));
+        const Vec relative=add(add(states[0].velocity,cross(rotate(states[0].attitude,bodies[0].spin),arm0)),
+            scale(add(states[1].velocity,cross(rotate(states[1].attitude,bodies[1].spin),arm1)),-1));
+        const double speed=maximum(0,-dot(relative,hit.normal));if(speed<0.0001)return;
+        if(states[0].status==1||states[1].status==1) {
+            const int moving=states[0].status==1?1:0;auto& s=states[moving];
+            s.position=add(s.position,scale(s.velocity,dt*(hit.fraction-1)));
+            s.impact_point=hit.point;s.impact_normal=scale(hit.normal,moving?-1:1);s.impact_arm=moving?arm1:arm0;
+            s.impact_speed=speed;s.impact_age=0;s.impact_mass=0;s.impact_part=-1;s.crush_force=80000;s.station_share=0.15;
+            s.impact_body=0;s.burned_fuel=0;s.station_burned_fuel=0;s.status=2;++s.impact_sequence;return;
+        }
+        const Vec response0=inverse_inertia(states[0].attitude,inertia(states[0].fuel),cross(arm0,hit.normal));
+        const Vec response1=inverse_inertia(states[1].attitude,inertia(states[1].fuel),cross(arm1,hit.normal));
+        const double mass0=2120+states[0].fuel,mass1=2120+states[1].fuel;
+        const double effective=1/(1/mass0+1/mass1+dot(hit.normal,add(cross(response0,arm0),cross(response1,arm1))));
+        const double impulse=1.08*effective*speed;
+        for(int i=0;i<2;i++) {
+            auto& s=states[i];const double sign=i?-1:1;const Vec arm=i?arm1:arm0,response=i?response1:response0;
+            s.position=add(s.position,scale(s.velocity,dt*(hit.fraction-1)));
+            s.velocity=add(s.velocity,scale(hit.normal,sign*impulse/(2120+s.fuel)));
+            s.omega=add(s.omega,rotate(conjugate(s.attitude),scale(response,sign*impulse)));
+            s.impact_point=hit.point;s.impact_normal=scale(hit.normal,sign);s.impact_arm=arm;s.impact_speed=speed;
+            s.impact_age=0;s.impact_mass=effective;s.impact_part=-1;s.crush_force=20000;s.station_share=0.5;
+            s.impact_body=1;s.burned_fuel=0;s.station_burned_fuel=0;s.status=2;++s.impact_sequence;
+            const Vec local=rotate(conjugate(s.attitude),arm);
+            if(0.5*effective*speed*speed>2000&&local.z<0&&local.z>-1.7&&absolute(local.x)>0.8){s.burned_fuel=s.fuel;s.fuel=0;}
+        }
     }
 }
 

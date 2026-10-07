@@ -1,8 +1,20 @@
-#include "physics.hpp"
+#include "state_io.hpp"
 #include <iomanip>
 #include <iostream>
-int main(int argc,char**) {
+int main(int argc,char** argv) {
     auto s=flight::initial();
+    if(argc>1&&argv[1][0]=='p') {
+        flight::State states[]={flight::initial(),flight::initial()};flight::Station station;
+        states[0].position={16,0,-30};states[1].position={-16,0,-30};
+        const double orbit_rate=__builtin_sqrt(flight::earth_mu/(flight::orbit_radius*flight::orbit_radius*flight::orbit_radius));
+        for(auto& body:states){body.attitude={};body.omega={orbit_rate,0,0};body.velocity={};}
+        states[0].velocity.x=50;states[1].velocity.x=-50;
+        const flight::Controls controls[2]={};
+        for(int i=0;i<24;i++)flight::advance_system(states,controls,2,station,flight::step_seconds);
+        std::cout<<std::setprecision(17);
+        for(const auto& body:states)flight::visit_state(body,[](int,double value){std::cout<<value<<'\n';});
+        flight::visit_station(station,[](int,double value){std::cout<<value<<'\n';});return 0;
+    }
     if(argc>1) {
         flight::Station station;s.position={0.35,0.2,-1};s.velocity.z=50;
         for(int i=0;i<120;++i){const flight::Controls c;flight::advance_system(&s,&c,1,station,flight::step_seconds);flight::judge(s,0,station);}
@@ -11,7 +23,7 @@ int main(int argc,char**) {
             s.attitude.w,s.attitude.x,s.attitude.y,s.attitude.z,s.omega.x,s.omega.y,s.omega.z,s.fuel,s.elapsed,
             static_cast<double>(s.status),s.score,s.impact_normal.x,s.impact_normal.y,s.impact_normal.z,
             s.impact_speed,s.impact_point.x,s.impact_point.y,s.impact_point.z,s.impact_age,s.impact_arm.x,s.impact_arm.y,s.impact_arm.z,
-            s.impact_mass,s.crush_force,s.station_share,s.impact_sequence,s.impact_part,s.burned_fuel,s.station_burned_fuel,
+            s.impact_mass,s.crush_force,s.station_share,s.impact_sequence,s.impact_part,s.burned_fuel,s.station_burned_fuel,static_cast<double>(s.impact_body),
             station.position.x,station.position.y,station.position.z,station.velocity.x,station.velocity.y,station.velocity.z,
             station.attitude.w,station.attitude.x,station.attitude.y,station.attitude.z,station.omega.x,station.omega.y,station.omega.z,
             static_cast<double>(station.broken_panels),static_cast<double>(station.ruptured_tanks)})std::cout<<value<<'\n';

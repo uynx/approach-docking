@@ -73,6 +73,7 @@ function stateReceived(message) {
   const mine = message.pilots[slot], opponent = message.pilots[1 - slot];
   $('pilot-name').textContent = mine.name;
   restore(mine.state);
+  opponent.state.forEach((v,i)=>sim.restore_opponent(i,v));sim.set_opponent(opponent.name?1:0);
   message.station?.forEach((v,i)=>sim.restore_station(i,v));
   if (message.phase === 'flight' && !mine.state[Flight.status]) {
     for (let i = 0; i < Math.min(12, Math.floor(latency / 2000 * 120)); i++) sim.step_flight(...controls(),slot);
@@ -298,7 +299,8 @@ function frame(now) {
     }
   }
   if(!$('score-award').hidden){const progress=Math.min(1,Math.max(0,(now-awardStarted)/1200));$('award-value').textContent=String(Math.round(awardScore*(1-(1-progress)**3)));}
-  scene.render(state, practice || !snapshot?.pilots[1 - slot]?.name ? null : snapshot.pilots[1 - slot].state, slot, active, axes, demo?demo.clock:now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
+  const opponent=practice||!snapshot?.pilots[1-slot]?.name?null:Array.from({length:sim.state_size()},(_,i)=>sim.opponent_component(i));
+  scene.render(state, opponent, slot, active, axes, demo?demo.clock:now, Array.from({length:sim.station_size()},(_,i)=>sim.station_component(i)),{altitude:sim.flight_altitude(),heat:sim.flight_heat(),airspeed:sim.flight_airspeed(),guidance:state.map((v,i)=>i<13?sim.guidance_component(i,slot):v)});
   requestAnimationFrame(frame);
 }
 try {

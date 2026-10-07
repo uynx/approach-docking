@@ -44,6 +44,7 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/web/physics.wasm
         -nostdlib -fno-exceptions -fno-rtti -fno-builtin
         -Wl,--no-entry -Wl,--export=reset_flight -Wl,--export=component
         -Wl,--export=restore -Wl,--export=step_flight -Wl,--export=state_size -Wl,--export=station_size
+        -Wl,--export=restore_opponent -Wl,--export=set_opponent -Wl,--export=opponent_component
         -Wl,--export=guidance_component -Wl,--export=flight_alignment -Wl,--export=flight_spin -Wl,--export=flight_altitude -Wl,--export=flight_heat -Wl,--export=flight_airspeed
         -Wl,--export=judge_flight -Wl,--export=station_component -Wl,--export=restore_station
         -Wl,--allow-undefined -Wl,-z,stack-size=65536

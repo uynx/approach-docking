@@ -99,6 +99,14 @@ int main() {
     if(capsule_world_velocity>=0||station.velocity.z<=0) throw std::runtime_error("capsule rebounds and station recoils");
     near(pair[1].velocity.z+station.velocity.z,0,1e-10,"station recoil changes the second pilot's relative velocity without accelerating their ship");
     std::cout << "PASS shared station recoil and inelastic rebound\n";
+    station={};pair[0]=aligned();pair[1]=aligned();
+    pair[0].position={16,0,-30};pair[1].position={-16,0,-30};
+    pair[0].velocity.x=50;pair[1].velocity.x=-50;
+    for(int i=0;i<12;i++)flight::advance_system(pair,inputs,2,station,flight::step_seconds,false);
+    if(pair[0].status!=2||pair[1].status!=2)throw std::runtime_error("two approaching capsules collide through their visible meshes");
+    near(pair[0].velocity.x+pair[1].velocity.x,0,1e-8,"capsule-to-capsule impact preserves linear momentum");
+    near(flight::length(station.velocity),0,1e-12,"a collision away from the station cannot push the station");
+    std::cout<<"PASS two-capsule mesh collision\n";
     station={}; pair[0]={};pair[1]={};
     pair[0].status=2;pair[0].impact_normal={0,0,-1};pair[0].impact_speed=3;
     pair[0].impact_point={-17,0,0};pair[0].impact_arm={1,0,3.2};pair[0].velocity={0,0,3};
