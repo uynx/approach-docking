@@ -106,7 +106,7 @@ Nearest nearest(const Vec* a,const Vec* b) {
     }
     return result;
 }
-struct Motion {Body body;flight::Quat previous;Vec translation,pivot;};
+struct Motion {Body body;Vec translation,pivot,start[3],end[3];};
 flight::Quat multiply(flight::Quat a,flight::Quat b) {
     return {a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,
         a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};
@@ -114,25 +114,32 @@ flight::Quat multiply(flight::Quat a,flight::Quat b) {
 Motion motion(const Body& body,double dt) {
     const double spin=flight::length(body.spin),angle=spin*dt/2;
     const auto axis=flight::scale(body.spin,spin>0?-__builtin_sin(angle)/spin:0);
-    return {body,multiply(body.attitude,{__builtin_cos(angle),axis.x,axis.y,axis.z}),flight::scale(body.velocity,dt),body.model==0?Vec{0,0,13}:Vec{}};
+    const auto previous=multiply(body.attitude,{__builtin_cos(angle),axis.x,axis.y,axis.z});
+    Motion result{body,flight::scale(body.velocity,dt),body.model==0?Vec{0,0,13}:Vec{}, {}, {}};
+    for(int i=0;i<3;i++){const Vec axis{i==0?1.0:0,i==1?1.0:0,i==2?1.0:0};result.start[i]=flight::rotate(previous,axis);result.end[i]=flight::rotate(body.attitude,axis);}
+    return result;
 }
+Vec transform(const Vec* basis,Vec p){return flight::add(flight::add(flight::scale(basis[0],p.x),flight::scale(basis[1],p.y)),flight::scale(basis[2],p.z));}
 struct Path {Vec start,end;};
 Path path(const Motion& body,Vec vertex) {
     vertex=sub(vertex,body.pivot);
-    return {flight::add(sub(body.body.position,body.translation),flight::rotate(body.previous,vertex)),
-        flight::add(body.body.position,flight::rotate(body.body.attitude,vertex))};
+    return {flight::add(sub(body.body.position,body.translation),transform(body.start,vertex)),
+        flight::add(body.body.position,transform(body.end,vertex))};
 }
 struct Bounds {Vec low{1e100,1e100,1e100},high{-1e100,-1e100,-1e100};};
 void include(Bounds& box,Vec p) {
     box.low={box.low.x<p.x?box.low.x:p.x,box.low.y<p.y?box.low.y:p.y,box.low.z<p.z?box.low.z:p.z};
     box.high={box.high.x>p.x?box.high.x:p.x,box.high.y>p.y?box.high.y:p.y,box.high.z>p.z?box.high.z:p.z};
 }
-Bounds swept_bounds(const Motion& body,const Node& node) {
-    Bounds box;
-    for(int corner=0;corner<8;corner++) {
-        const auto p=path(body,{corner&1?node.high.x:node.low.x,corner&2?node.high.y:node.low.y,corner&4?node.high.z:node.low.z});
-        include(box,p.start);include(box,p.end);
-    }
+Bounds swept_bounds(const Motion& body,const Node& node,double limit) {
+    Bounds box;const auto center=path(body,flight::scale(flight::add(node.low,node.high),0.5));
+    const auto half=flight::scale(sub(node.high,node.low),0.5);
+    Vec basis[3];for(int i=0;i<3;i++)basis[i]=blend(body.start[i],body.end[i],limit);
+    auto extent=[&](const Vec* basis){return Vec{__builtin_fabs(basis[0].x)*half.x+__builtin_fabs(basis[1].x)*half.y+__builtin_fabs(basis[2].x)*half.z,
+        __builtin_fabs(basis[0].y)*half.x+__builtin_fabs(basis[1].y)*half.y+__builtin_fabs(basis[2].y)*half.z,
+        __builtin_fabs(basis[0].z)*half.x+__builtin_fabs(basis[1].z)*half.y+__builtin_fabs(basis[2].z)*half.z};};
+    const auto startHalf=extent(body.start),endHalf=extent(basis),end=blend(center.start,center.end,limit);
+    include(box,sub(center.start,startHalf));include(box,flight::add(center.start,startHalf));include(box,sub(end,endHalf));include(box,flight::add(end,endHalf));
     return box;
 }
 bool overlaps(const Bounds& a,const Bounds& b) {
@@ -143,6 +150,25 @@ bool active(const Motion& body,const Triangle& triangle) {
     const auto& part=parts[triangle.part];
     return !(part.panel>=0&&(body.body.broken&(1<<part.panel)))&&!(body.body.model==0&&part.tank>=0&&(body.body.ruptured&(1<<part.tank)));
 }
+bool interval(const Path* a,const Path* b,Vec axis,double& enter,double& exit,Vec& normal) {
+    const double length=flight::length(axis);if(length<1e-14)return true;
+    axis=flight::scale(axis,1/length);
+    double minA=1e100,maxA=-1e100,minB=1e100,maxB=-1e100,minVA=1e100,maxVA=-1e100,minVB=1e100,maxVB=-1e100;
+    for(int i=0;i<3;i++) {
+        const double pa=dot(a[i].start,axis),pb=dot(b[i].start,axis),va=dot(sub(a[i].end,a[i].start),axis),vb=dot(sub(b[i].end,b[i].start),axis);
+        minA=minA<pa?minA:pa;maxA=maxA>pa?maxA:pa;minB=minB<pb?minB:pb;maxB=maxB>pb?maxB:pb;
+        minVA=minVA<va?minVA:va;maxVA=maxVA>va?maxVA:va;minVB=minVB<vb?minVB:vb;maxVB=maxVB>vb?maxVB:vb;
+    }
+    const double gaps[]={maxA-minB+1e-6,maxB-minA+1e-6},rates[]={maxVA-minVB,maxVB-minVA};
+    for(int i=0;i<2;i++) {
+        if(__builtin_fabs(rates[i])<1e-14){if(gaps[i]<0)return false;continue;}
+        const double crossing=-gaps[i]/rates[i];
+        if(rates[i]>0&&crossing>enter){enter=crossing;normal=flight::scale(axis,i?1:-1);}
+        else if(rates[i]<0&&crossing<exit)exit=crossing;
+        if(enter>exit)return false;
+    }
+    return true;
+}
 bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const Triangle& tb,double limit,Contact& hit) {
     const int ia[]={ta.a,ta.b,ta.c},ib[]={tb.a,tb.b,tb.c};Path pa[3],pb[3];
     double va=0,vb=0;
@@ -151,18 +177,28 @@ bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const T
         const double da=flight::length(sub(pa[i].end,pa[i].start)),db=flight::length(sub(pb[i].end,pb[i].start));
         va=va>da?va:da;vb=vb>db?vb:db;
     }
-    const double speed=va+vb;double t=0;
+    Bounds ba,bb;
+    for(int i=0;i<3;i++){include(ba,pa[i].start);include(ba,pa[i].end);include(bb,pb[i].start);include(bb,pb[i].end);}
+    if(!overlaps(ba,bb))return false;
+    Vec ea[3],eb[3];for(int i=0;i<3;i++){ea[i]=sub(pa[(i+1)%3].start,pa[i].start);eb[i]=sub(pb[(i+1)%3].start,pb[i].start);}
+    const Vec na=cross(ea[0],ea[1]),nb=cross(eb[0],eb[1]);double enter=0,exit=limit;Vec axisNormal{};
+    if(!interval(pa,pb,na,enter,exit,axisNormal)||!interval(pa,pb,nb,enter,exit,axisNormal))return false;
+    for(int i=0;i<3;i++) {
+        if(!interval(pa,pb,cross(na,ea[i]),enter,exit,axisNormal)||!interval(pa,pb,cross(nb,eb[i]),enter,exit,axisNormal))return false;
+        for(int j=0;j<3;j++)if(!interval(pa,pb,cross(ea[i],eb[j]),enter,exit,axisNormal))return false;
+    }
+    const double speed=va+vb;double t=enter;
     for(int iteration=0;iteration<96;iteration++) {
         Vec aa[3],bb[3];for(int i=0;i<3;i++){aa[i]=blend(pa[i].start,pa[i].end,t);bb[i]=blend(pb[i].start,pb[i].end,t);}
         const auto gap=nearest(aa,bb);const double distance=__builtin_sqrt(gap.squared);
         if(distance<=0.000001) {
-            Vec normal=distance>1e-10?flight::scale(sub(gap.a,gap.b),1/distance):cross(sub(bb[1],bb[0]),sub(bb[2],bb[0]));
+            Vec normal=distance>1e-10?flight::scale(sub(gap.a,gap.b),1/distance):flight::length(axisNormal)>0?axisNormal:cross(sub(bb[1],bb[0]),sub(bb[2],bb[0]));
             normal=flight::scale(normal,1/flight::length(normal));
             if(dot(normal,sub(a.translation,b.translation))>0)normal=flight::scale(normal,-1);
             hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,ta.part,tb.part};return true;
         }
-        if(speed<1e-14||t>=limit)return false;
-        const double next=t+distance/speed;t=next<limit?next:limit;
+        if(speed<1e-14||t>=exit)return false;
+        const double next=t+distance/speed;t=next<exit?next:exit;
     }
     return false;
 }
@@ -173,7 +209,7 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
     struct Pair {int a,b;};Pair stack[128];int count=1,contacts=0;stack[0]={roots[bodyA.model],roots[bodyB.model]};
     while(count) {
         const auto pair=stack[--count];const auto& na=nodes[pair.a];const auto& nb=nodes[pair.b];
-        const auto ba=swept_bounds(a,na),bb=swept_bounds(b,nb);if(!overlaps(ba,bb))continue;
+        const auto ba=swept_bounds(a,na,result.fraction),bb=swept_bounds(b,nb,result.fraction);if(!overlaps(ba,bb))continue;
         if(na.count&&nb.count) {
             for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))for(int j=nb.start;j<nb.start+nb.count;j++)if(active(b,triangles[j])) {
                 Contact hit;
