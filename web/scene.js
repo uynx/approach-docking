@@ -97,7 +97,7 @@ export function createScene(canvas) {
     light.position.set(port+Math.cos(angle)*1.04,Math.sin(angle)*1.04,-0.09);light.userData.port=port;light.userData.index=i;collarLights.add(light);
   }
   station.group.add(collarLights);
-  let lastStatus=0,capturedAt=-Infinity;
+  let lastStatus=0,capturedAt=-Infinity,orbitTime=0,earthLongitude=Math.random()*Math.PI*2;
   let dockingCamera=false,lookYaw=0,lookPitch=0,lastNow;
   const damageEffects=createDamageEffects(scene,station,[own,other]);
   const look=new THREE.Quaternion();
@@ -116,7 +116,7 @@ export function createScene(canvas) {
   }
   return {
     ready,
-    resetSimulation() {damageEffects.reset();lastStatus=0;capturedAt=-Infinity;capturePulse.visible=false;},
+    resetSimulation() {damageEffects.reset();lastStatus=0;capturedAt=-Infinity;capturePulse.visible=false;orbitTime=0;earthLongitude=Math.random()*Math.PI*2;},
     resetCamera() {lookYaw=0;lookPitch=0;look.identity();return dockingCamera;},
     impactView() {dockingCamera=false;lookYaw=-0.65;lookPitch=0.15;look.setFromEuler(new THREE.Euler(lookPitch,lookYaw,0,'YXZ'));},
     moveCamera(dx,dy) {
@@ -206,7 +206,7 @@ export function createScene(canvas) {
       canvas.dataset.explosions=String(counts.explosions);
       renderer.setScissorTest(false);renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();
       skyCamera.position.copy(camera.position).multiplyScalar(0.001);skyCamera.quaternion.copy(camera.quaternion);
-      const orbitTime=state?.[Flight.elapsed]||0;
+      orbitTime=Math.max(orbitTime+dt,state?.[Flight.elapsed]||0);
       satellites.rotation.y=orbitTime*0.0007;
       satellites.children.forEach((satellite,i)=>{satellite.rotation.z=0.4+i+orbitTime*0.012;});
       sky.backgroundRotation.x=orbitTime*meanMotion;
@@ -214,7 +214,7 @@ export function createScene(canvas) {
       sunGlow.position.copy(sunlight).multiplyScalar(20000);
       for(const world of [scene,sky])for(const light of world.children)if(light.isDirectionalLight)light.position.copy(sunlight).multiplyScalar(160);
       atmosphere.material.uniforms.sun.value=sunlight;
-      if(earth)earth.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),orbitTime*(meanMotion-7.2921159e-5)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),-Math.PI/2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),-1.4));
+      if(earth)earth.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),orbitTime*(meanMotion-7.2921159e-5)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),-Math.PI/2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),earthLongitude));
       renderer.render(sky,skyCamera);renderer.clearDepth();renderer.render(scene,camera);
       canvas.dataset.rendered='true';
     },

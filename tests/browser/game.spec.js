@@ -139,6 +139,7 @@ async function controlledFlight(page) {
     THREE.Object3D.prototype.updateMatrixWorld=function(...args){
       if(this.name==='station')window.stationObject=this;
       if(this.name==='capsule-'+0x6daaa7)window.capsuleObject=this;
+      if(this.name==='earth')window.earthObject=this;
       return updateObject.apply(this,args);
     };
     const update=THREE.Camera.prototype.updateMatrixWorld;
@@ -152,6 +153,19 @@ async function controlledFlight(page) {
     window.frameTime=performance.now();window.flightFrame(window.frameTime);
   });
 }
+
+test('Earth starts at a new longitude and keeps rotating after docking',async ({page})=>{
+  await controlledFlight(page);
+  const rotation=()=>page.evaluate(()=>window.earthObject.quaternion.toArray());
+  await page.getByRole('button',{name:'Practice flight',exact:true}).click();await pose(page,{14:0});
+  const before=await rotation();
+  await page.getByRole('button',{name:'Practice flight',exact:true}).click();await pose(page,{14:0});
+  expect(await rotation()).not.toEqual(before);
+  await pose(page,{15:1});const docked=await rotation();
+  await pose(page,{},100);
+  expect(await rotation()).not.toEqual(docked);
+});
+
 
 async function pose(page, values, advance=0) {
   return page.evaluate(({values,advance})=>{
