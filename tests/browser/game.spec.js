@@ -124,6 +124,27 @@ test('new flight modules and NASA textures are served with their actual MIME typ
   }
 });
 
+test('a saved room resumes while background texture loading is stalled',async ({page})=>{
+  test.setTimeout(60000);
+  await page.goto('/');
+  await page.getByRole('button',{name:'Multiplayer',exact:true}).click();
+  await page.getByLabel('Callsign').fill('Alice');
+  await page.getByRole('button',{name:'Create room'}).click();
+  await expect(page.locator('#room-code')).toHaveText(/^[A-Z2-9]{6}$/);
+  const code=await page.locator('#room-code').textContent();
+  let release;
+  const loading=new Promise(resolve=>{release=resolve;});
+  await page.route('**/assets/moon.jpg',async route=>{await loading;await route.continue();});
+  try {
+    await page.reload({waitUntil:'domcontentloaded'});
+    await expect(page.locator('#mode')).toHaveText('LOBBY');
+    await expect(page.locator('#room-code')).toHaveText(code);
+    await expect(page.getByRole('button',{name:'Practice flight',exact:true})).toBeDisabled();
+  } finally {release();}
+  await expect(page.getByRole('button',{name:'Practice flight',exact:true})).toBeEnabled({timeout:30000});
+  await expect(page.locator('#mode')).toHaveText('LOBBY');
+});
+
 async function controlledFlight(page) {
   await page.addInitScript(() => {
     window.requestAnimationFrame=callback=>{window.flightFrame=callback;return 1;};

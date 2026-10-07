@@ -306,7 +306,7 @@ function frame(now) {
 }
 try {
   scene = createScene($('viewport'));
-  const [response]=await Promise.all([fetch('/physics.wasm'),scene.ready]);
+  const response=await fetch('/physics.wasm');
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
   const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });
   sim = instance.exports;
@@ -315,12 +315,14 @@ try {
   const values=new Float64Array(sim.memory.buffer,sim.read_frame(slot),sim.frame_size()),guideAt=size*2+stationSize;
   display={state:values.subarray(0,size),opponent:values.subarray(size,size*2),station:values.subarray(size*2,guideAt),guidance:values.subarray(guideAt,guideAt+size),thermal:values.subarray(guideAt+size)};
   sim.reset_flight();
-  $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';
   const saved=sessionStorage.getItem('approach-session');
-  if(!$('join-code').value&&!saved)startPractice(false);
+  connect();
+  await scene.ready;
+  $('practice').disabled = false; $('entry').disabled = false;
+  if(!active&&!$('join-code').value&&!saved)startPractice(false);
   else if($('join-code').value){$('welcome').hidden=false;$('multiplayer').setAttribute('aria-expanded','true');}
-  connect(); requestAnimationFrame(frame);
+  requestAnimationFrame(frame);
   setInterval(() => {
     if (!practice && snapshot?.phase === 'flight' && !snapshot.pilots[slot].state[Flight.status] && socket?.readyState === WebSocket.OPEN)
       send({ type: 'input', seq: ++sequence, axes: controls() });
