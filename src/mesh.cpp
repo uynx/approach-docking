@@ -45,4 +45,149 @@ Hit ray(int model,Vec origin,Vec direction,double limit,int broken,int ruptured)
     }
     return hit;
 }
+
+double clamp(double value,double low,double high){return value<low?low:value>high?high:value;}
+Vec blend(Vec a,Vec b,double t){return flight::add(a,flight::scale(sub(b,a),t));}
+Vec closest(Vec p,Vec a,Vec b,Vec c) {
+    const auto ab=sub(b,a),ac=sub(c,a),ap=sub(p,a);
+    const double d1=dot(ab,ap),d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a;
+    const auto bp=sub(p,b);const double d3=dot(ab,bp),d4=dot(ac,bp);
+    if(d3>=0&&d4<=d3)return b;
+    const double vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0)return flight::add(a,flight::scale(ab,d1/(d1-d3)));
+    const auto cp=sub(p,c);const double d5=dot(ab,cp),d6=dot(ac,cp);
+    if(d6>=0&&d5<=d6)return c;
+    const double vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0)return flight::add(a,flight::scale(ac,d2/(d2-d6)));
+    const double va=d3*d6-d5*d4;
+    if(va<=0&&d4-d3>=0&&d5-d6>=0)return blend(b,c,(d4-d3)/(d4-d3+d5-d6));
+    const double inverse=1/(va+vb+vc);
+    return flight::add(a,flight::add(flight::scale(ab,vb*inverse),flight::scale(ac,vc*inverse)));
+}
+bool pierce(Vec start,Vec end,const Vec* triangle,Vec& point) {
+    const auto direction=sub(end,start),ab=sub(triangle[1],triangle[0]),ac=sub(triangle[2],triangle[0]);
+    const auto p=cross(direction,ac);const double determinant=dot(ab,p);
+    if(__builtin_fabs(determinant)<1e-14)return false;
+    const double inverse=1/determinant;const auto offset=sub(start,triangle[0]);
+    const double u=dot(offset,p)*inverse;if(u<0||u>1)return false;
+    const auto q=cross(offset,ab);const double v=dot(direction,q)*inverse;if(v<0||u+v>1)return false;
+    const double t=dot(ac,q)*inverse;if(t<0||t>1)return false;
+    point=blend(start,end,t);return true;
+}
+struct Nearest {double squared=1e100;Vec a,b;};
+void consider(Nearest& result,Vec a,Vec b) {
+    const double squared=dot(sub(a,b),sub(a,b));
+    if(squared<result.squared)result={squared,a,b};
+}
+void segments(Nearest& result,Vec p,Vec q,Vec r,Vec s) {
+    const auto d1=sub(q,p),d2=sub(s,r),offset=sub(p,r);
+    const double a=dot(d1,d1),e=dot(d2,d2),b=dot(d1,d2),c=dot(d1,offset),f=dot(d2,offset);
+    double u=0,v=0;
+    if(a<=1e-20&&e<=1e-20){consider(result,p,r);return;}
+    if(a<=1e-20)v=clamp(f/e,0,1);
+    else if(e<=1e-20)u=clamp(-c/a,0,1);
+    else {
+        const double denominator=a*e-b*b;
+        if(denominator>1e-20)u=clamp((b*f-c*e)/denominator,0,1);
+        v=(b*u+f)/e;
+        if(v<0){v=0;u=clamp(-c/a,0,1);}else if(v>1){v=1;u=clamp((b-c)/a,0,1);}
+    }
+    consider(result,blend(p,q,u),blend(r,s,v));
+}
+Nearest nearest(const Vec* a,const Vec* b) {
+    Nearest result;
+    for(int i=0;i<3;i++) {
+        Vec point;
+        if(pierce(a[i],a[(i+1)%3],b,point)||pierce(b[i],b[(i+1)%3],a,point))return {0,point,point};
+        consider(result,a[i],closest(a[i],b[0],b[1],b[2]));
+        consider(result,closest(b[i],a[0],a[1],a[2]),b[i]);
+        for(int j=0;j<3;j++)segments(result,a[i],a[(i+1)%3],b[j],b[(j+1)%3]);
+    }
+    return result;
+}
+struct Motion {Body body;flight::Quat previous;Vec translation,pivot;};
+flight::Quat multiply(flight::Quat a,flight::Quat b) {
+    return {a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,
+        a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};
+}
+Motion motion(const Body& body,double dt) {
+    const double spin=flight::length(body.spin),angle=spin*dt/2;
+    const auto axis=flight::scale(body.spin,spin>0?-__builtin_sin(angle)/spin:0);
+    return {body,multiply(body.attitude,{__builtin_cos(angle),axis.x,axis.y,axis.z}),flight::scale(body.velocity,dt),body.model==0?Vec{0,0,13}:Vec{}};
+}
+struct Path {Vec start,end;};
+Path path(const Motion& body,Vec vertex) {
+    vertex=sub(vertex,body.pivot);
+    return {flight::add(sub(body.body.position,body.translation),flight::rotate(body.previous,vertex)),
+        flight::add(body.body.position,flight::rotate(body.body.attitude,vertex))};
+}
+struct Bounds {Vec low{1e100,1e100,1e100},high{-1e100,-1e100,-1e100};};
+void include(Bounds& box,Vec p) {
+    box.low={box.low.x<p.x?box.low.x:p.x,box.low.y<p.y?box.low.y:p.y,box.low.z<p.z?box.low.z:p.z};
+    box.high={box.high.x>p.x?box.high.x:p.x,box.high.y>p.y?box.high.y:p.y,box.high.z>p.z?box.high.z:p.z};
+}
+Bounds swept_bounds(const Motion& body,const Node& node) {
+    Bounds box;
+    for(int corner=0;corner<8;corner++) {
+        const auto p=path(body,{corner&1?node.high.x:node.low.x,corner&2?node.high.y:node.low.y,corner&4?node.high.z:node.low.z});
+        include(box,p.start);include(box,p.end);
+    }
+    return box;
+}
+bool overlaps(const Bounds& a,const Bounds& b) {
+    constexpr double tolerance=0.000002;
+    return a.high.x+tolerance>=b.low.x&&b.high.x+tolerance>=a.low.x&&a.high.y+tolerance>=b.low.y&&b.high.y+tolerance>=a.low.y&&a.high.z+tolerance>=b.low.z&&b.high.z+tolerance>=a.low.z;
+}
+bool active(const Motion& body,const Triangle& triangle) {
+    const auto& part=parts[triangle.part];
+    return !(part.panel>=0&&(body.body.broken&(1<<part.panel)))&&!(body.body.model==0&&part.tank>=0&&(body.body.ruptured&(1<<part.tank)));
+}
+bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const Triangle& tb,double limit,Contact& hit) {
+    const int ia[]={ta.a,ta.b,ta.c},ib[]={tb.a,tb.b,tb.c};Path pa[3],pb[3];
+    double va=0,vb=0;
+    for(int i=0;i<3;i++) {
+        pa[i]=path(a,vertices[ia[i]]);pb[i]=path(b,vertices[ib[i]]);
+        const double da=flight::length(sub(pa[i].end,pa[i].start)),db=flight::length(sub(pb[i].end,pb[i].start));
+        va=va>da?va:da;vb=vb>db?vb:db;
+    }
+    const double speed=va+vb;double t=0;
+    for(int iteration=0;iteration<96;iteration++) {
+        Vec aa[3],bb[3];for(int i=0;i<3;i++){aa[i]=blend(pa[i].start,pa[i].end,t);bb[i]=blend(pb[i].start,pb[i].end,t);}
+        const auto gap=nearest(aa,bb);const double distance=__builtin_sqrt(gap.squared);
+        if(distance<=0.000001) {
+            Vec normal=distance>1e-10?flight::scale(sub(gap.a,gap.b),1/distance):cross(sub(bb[1],bb[0]),sub(bb[2],bb[0]));
+            normal=flight::scale(normal,1/flight::length(normal));
+            if(dot(normal,sub(a.translation,b.translation))>0)normal=flight::scale(normal,-1);
+            hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,ta.part,tb.part};return true;
+        }
+        if(speed<1e-14||t>=limit)return false;
+        const double next=t+distance/speed;t=next<limit?next:limit;
+    }
+    return false;
+}
+Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
+    Contact result;
+    if(bodyA.model<0||bodyA.model>1||bodyB.model<0||bodyB.model>1||!(dt>0))return result;
+    const auto a=motion(bodyA,dt),b=motion(bodyB,dt);
+    struct Pair {int a,b;};Pair stack[128];int count=1,contacts=0;stack[0]={roots[bodyA.model],roots[bodyB.model]};
+    while(count) {
+        const auto pair=stack[--count];const auto& na=nodes[pair.a];const auto& nb=nodes[pair.b];
+        const auto ba=swept_bounds(a,na),bb=swept_bounds(b,nb);if(!overlaps(ba,bb))continue;
+        if(na.count&&nb.count) {
+            for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))for(int j=nb.start;j<nb.start+nb.count;j++)if(active(b,triangles[j])) {
+                Contact hit;
+                if(!triangle_contact(a,b,triangles[i],triangles[j],result.fraction,hit))continue;
+                if(hit.fraction<result.fraction-0.00001){result=hit;result.point={};result.normal={};contacts=0;}
+                if(hit.fraction<=result.fraction+0.00001){result.hit=true;result.fraction=hit.fraction;result.partA=hit.partA;result.partB=hit.partB;result.point=flight::add(result.point,hit.point);result.normal=flight::add(result.normal,hit.normal);contacts++;}
+            }
+        } else {
+            const double sa=flight::length(sub(ba.high,ba.low)),sb=flight::length(sub(bb.high,bb.low));
+            if(!na.count&&(nb.count||sa>sb)){stack[count++]={na.left,pair.b};stack[count++]={na.right,pair.b};}
+            else{stack[count++]={pair.a,nb.left};stack[count++]={pair.a,nb.right};}
+        }
+    }
+    if(contacts){result.point=flight::scale(result.point,1.0/contacts);result.normal=flight::scale(result.normal,1/flight::length(result.normal));}
+    return result;
+}
 }
