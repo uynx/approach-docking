@@ -62,7 +62,8 @@ export function createDamageEffects(scene,station,[own,other]) {
       ship.normal=new THREE.Vector3(state[Flight.normalX],state[Flight.normalY],-state[Flight.normalZ]);
       ship.point=new THREE.Vector3(state[Flight.impactX],state[Flight.impactY],-state[Flight.impactZ]);
       ship.localNormal=ship.normal.clone().applyQuaternion(quaternion(state).invert());
-      ship.damageDirection(ship.localNormal);
+      const localPoint=ship.group.worldToLocal(ship.point.clone().add(station.offset));
+      ship.damageDirection(ship.localNormal,localPoint);
       const point=station.group.worldToLocal(ship.point.clone().add(station.offset));
       const normal=ship.normal.clone().applyQuaternion(station.group.quaternion.clone().invert());
       const hit={point,normal,crush:0};if(stationImpact)dents.push(hit);ship.dent=hit;

@@ -415,9 +415,11 @@ export function spacecraftModel(accent) {
     return box(group,[0.04,0.4,0.46],[side*1.395,0,0],white);
   });
   const normal=new THREE.Vector3(0,0,1), across=new THREE.Vector3(1,0,0), up=new THREE.Vector3(0,1,0);
+  const contact=new THREE.Vector3();let localized=false;
   let low=-3.2,high=2.3,lastCrush=-1;
-  function damageDirection(direction) {
+  function damageDirection(direction,point) {
     normal.copy(direction).normalize();
+    localized=Boolean(point);if(point)contact.copy(point);
     across.set(0,1,0);if(Math.abs(normal.y)>0.9)across.set(1,0,0);
     across.cross(normal).normalize();up.crossVectors(normal,across);
     low=Infinity;high=-Infinity;
@@ -435,15 +437,19 @@ export function spacecraftModel(accent) {
     });
     const crush=body?body.permanentCrush:0;
     if(Math.abs(crush-lastCrush)<1e-8)return;lastCrush=crush;
+    const contactX=contact.dot(across),contactY=contact.dot(up);
+    const spread=0.65+(body?body.capsuleCrush:0)*0.9;
     for(const {object,original} of deformable) {
       const positions=object.geometry.attributes.position;
       for(let i=0;i<original.length;i+=3) {
         const point=new THREE.Vector3(original[i],original[i+1],original[i+2]);
         const projection=point.dot(normal), depth=-3.2+5*(projection-low)/(high-low);
         const angle=Math.atan2(point.dot(up),point.dot(across));
+        const dx=point.dot(across)-contactX,dy=point.dot(up)-contactY;
+        const weight=localized?Math.exp(-(dx*dx+dy*dy)/(2*spread*spread)):1;
         const rigidity=object.material===white?1:object.material===metal?0.85:0.55;
-        const buckle=body?rigidity*body.buckle(depth,angle):0;
-        if(body)point.addScaledVector(normal,Math.min(body.displacement(depth),0.4*(high-low)));
+        const buckle=body?weight*rigidity*body.buckle(depth,angle):0;
+        if(body)point.addScaledVector(normal,weight*Math.min(body.displacement(depth),0.4*(high-low)));
         point.addScaledVector(across,buckle*Math.cos(angle)).addScaledVector(up,buckle*Math.sin(angle));
         positions.setXYZ(i/3,point.x,point.y,point.z);
       }

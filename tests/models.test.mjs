@@ -124,3 +124,21 @@ test('a severe axial crash buckles the metal frame as well as its skin',()=>{
   ship.deform(null);
   metal.forEach((part,j)=>assert.deepEqual(part.geometry.attributes.position.array,before[j],'reset restores the frame'));
 });
+
+test('an off-centre strike folds the struck side without repeating around the hull',()=>{
+  const ship=spacecraftModel(0x6daaa7),panels=ship.fragments.filter(p=>p.name==='capsule-hull');
+  const before=panels.map(p=>p.geometry.attributes.position.array.slice());
+  const hit=new CrushBody(2200,8);hit.advance(1);
+  ship.damageDirection(new THREE.Vector3(0,0,1),new THREE.Vector3(1.2,0,-1.5));ship.deform(hit);
+  let struck=0,opposite=0;
+  panels.forEach((panel,j)=>{
+    const points=panel.geometry.attributes.position.array;
+    for(let i=0;i<points.length;i+=3)if(Math.abs(before[j][i+2]+1.5)<0.02&&Math.abs(before[j][i+1])<0.05) {
+      const displacement=Math.hypot(points[i]-before[j][i],points[i+1]-before[j][i+1],points[i+2]-before[j][i+2]);
+      if(before[j][i]>1.2)struck=Math.max(struck,displacement);
+      if(before[j][i]<-1.2)opposite=Math.max(opposite,displacement);
+    }
+  });
+  assert.ok(struck>0.2,'the contacted hull loses its shape');
+  assert.ok(opposite<struck*0.4,'the opposite side does not receive the same fold');
+});
