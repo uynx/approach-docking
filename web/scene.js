@@ -2,7 +2,7 @@ import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
 import { shipPosition, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
 import { createDamageEffects } from './damage-effects.js';
-import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera,meshHit } from './models.js';
+import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera,meshHit,batchRendering } from './models.js';
 
 export function createScene(canvas) {
   const context = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
@@ -10,12 +10,11 @@ export function createScene(canvas) {
     throw new Error('WebGL is blocked or unavailable. In Brave, try Standard fingerprinting protection for this site, then reload. Chromium also works.');
   }
   const renderer = new THREE.WebGLRenderer({ canvas, context, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setClearColor(0x020306);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.autoClear = false;
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
   const scene = new THREE.Scene(), sky = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 4000);
   const skyCamera = new THREE.PerspectiveCamera(48, 1, 0.1, 30000);
@@ -23,7 +22,7 @@ export function createScene(canvas) {
   for (const world of [scene,sky]) {
     const sun = new THREE.DirectionalLight(0xfff6e8, 3.1);
     sun.position.copy(sunDirection).multiplyScalar(160);
-    if(world===scene){sun.castShadow=true;sun.shadow.mapSize.set(4096,4096);Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:260});sun.shadow.camera.updateProjectionMatrix();sun.shadow.bias=-0.00004;sun.shadow.normalBias=0.015;}
+    if(world===scene){sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:260});sun.shadow.camera.updateProjectionMatrix();sun.shadow.bias=-0.00004;sun.shadow.normalBias=0.015;}
     world.add(sun);
   }
   scene.add(new THREE.HemisphereLight(0x171c22,0x719eb4,1.3));
@@ -32,6 +31,7 @@ export function createScene(canvas) {
   const own = spacecraftModel(0x6daaa7), other = spacecraftModel(0xc6a06c);
   scene.add(own.group,other.group);
   for(const model of [station,own,other])model.group.traverse(part=>{if(part.isMesh&&part.material.isMeshStandardMaterial){part.castShadow=true;part.receiveShadow=true;}});
+  const renderBatches=[station,own,other].map(model=>batchRendering(model.group));
   const plasma=new THREE.Mesh(new THREE.SphereGeometry(1,48,32),new THREE.ShaderMaterial({
     transparent:true,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
     uniforms:{strength:{value:0}},
@@ -62,7 +62,7 @@ export function createScene(canvas) {
       texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=renderer.capabilities.getMaxAnisotropy();
       const material=new THREE.MeshStandardMaterial({map:texture,roughness:0.85,envMap:skyReflection,envMapIntensity:0.8});
       material.onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nfloat ocean=smoothstep(1.15,1.8,diffuseColor.b/max(0.0001,max(diffuseColor.r,diffuseColor.g)));roughnessFactor=mix(0.85,0.23,ocean);');};
-      earth = new THREE.Mesh(new THREE.SphereGeometry(6371,256,192),material);earth.name='earth';
+      earth = new THREE.Mesh(new THREE.SphereGeometry(6371,128,96),material);earth.name='earth';
       earth.position.set(0,-6771,0);earth.rotation.z=-Math.PI/2;sky.add(earth);
     }),
     loader.loadAsync('/assets/stars.jpg').then(texture=>{
@@ -71,7 +71,7 @@ export function createScene(canvas) {
     }),
     loader.loadAsync('/assets/moon.jpg').then(texture=>{texture.colorSpace=THREE.SRGBColorSpace;moon.material.map=texture;moon.material.needsUpdate=true;}),
   ]);
-  const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(6415,256,192),new THREE.ShaderMaterial({
+  const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(6415,96,64),new THREE.ShaderMaterial({
     transparent:true,depthWrite:false,side:THREE.BackSide,
     uniforms:{sun:{value:sunDirection}},
     vertexShader:'varying vec3 n;varying vec3 view;varying float light;uniform vec3 sun;void main(){vec4 p=modelViewMatrix*vec4(position,1.0);n=normalize(normalMatrix*normal);view=normalize(-p.xyz);light=max(0.0,dot(normalize(mat3(modelMatrix)*normal),sun));gl_Position=projectionMatrix*p;}',
@@ -94,6 +94,7 @@ export function createScene(canvas) {
   const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
   function place(ship,s,slot) {ship.group.position.set(...shipPosition(s,slot));ship.group.quaternion.copy(quaternion(s));}
   function resize() {
+    renderer.setPixelRatio(Math.min(devicePixelRatio,1.5,Math.sqrt(1920*1080/(innerWidth*innerHeight))));
     renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
     skyCamera.aspect=camera.aspect;skyCamera.updateProjectionMatrix();
   }
@@ -196,6 +197,7 @@ export function createScene(canvas) {
         marker.hidden=true;
       }
       const counts=damageEffects.advance(dt);
+      for(const sync of renderBatches)sync();
       canvas.dataset.fragments=String(counts.fragments);
       canvas.dataset.explosions=String(counts.explosions);
       renderer.setScissorTest(false);renderer.setViewport(0,0,innerWidth,innerHeight);renderer.clear();

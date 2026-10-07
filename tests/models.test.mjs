@@ -7,7 +7,7 @@ import * as THREE from 'three';
 const source=(await readFile(new URL('../web/models.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./flight-view.js',new URL('../web/flight-view.js',import.meta.url).href);
-const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera,meshHit}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera,meshHit,batchRendering}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const effectsSource=(await readFile(new URL('../web/damage-effects.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./state.js',new URL('../web/state.js',import.meta.url).href)
@@ -33,6 +33,22 @@ test('accelerated rays preserve the nearest actual triangle after damage and res
     assert.equal(meshHit(origin,direction,solidMeshes(station.group),0.1),null,'short rays do not reach the collar');
   }
   assert.equal(meshHit(new THREE.Vector3(-27.5,0,-11),direction,solidMeshes(station.group),4),null,'empty truss bays stay open');
+});
+
+test('render batches follow crushed vertices, detached visibility and round reset',()=>{
+  const ship=spacecraftModel(0x6daaa7),sync=batchRendering(ship.group);
+  const triangleCount=()=>ship.group.children.filter(p=>p.name==='render-batch').reduce((sum,p)=>sum+p.geometry.drawRange.count/3,0);
+  const initial=triangleCount(),panel=ship.fragments.find(p=>p.name==='capsule-hull');
+  const batch=ship.group.children.find(p=>p.name==='render-batch'&&p.material===panel.material);
+  const before=batch.geometry.attributes.position.array.slice();
+  const body=new CrushBody(2200,30);body.advance(1);ship.deform(body);sync();
+  assert.ok(batch.geometry.attributes.position.array.some((v,i)=>Math.abs(v-before[i])>0.1),'the renderer shows the real crush');
+  panel.visible=false;sync();
+  assert.ok(triangleCount()<initial,'detached hull leaves a visible hole');
+  panel.visible=true;ship.deform(null);sync();
+  assert.equal(triangleCount(),initial);assert.deepEqual(batch.geometry.attributes.position.array,before);
+  assert.ok(!solidMeshes(ship.group).includes(batch),'render copies do not add colliders');
+  assert.ok(solidMeshes(ship.group).includes(panel),'the actual hull retains its collider');
 });
 
 test('camera clearance uses actual truss rails while leaving empty bays open',()=>{

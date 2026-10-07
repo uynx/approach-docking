@@ -88,6 +88,62 @@ export function clipMeshCamera(origin,desired,meshes,clearance=0.25) {
   if(facing>0)return hit.point.clone().addScaledVector(normal,clearance);
   return origin.clone().addScaledVector(delta,Math.max(0,hit.distance-clearance/Math.max(0.01,-facing)));
 }
+export function batchRendering(root) {
+  const groups=new Map(),matrix=new THREE.Matrix4(),normalMatrix=new THREE.Matrix3(),vector=new THREE.Vector3();
+  root.traverse(part=>{
+    if(!part.isMesh||!part.material.isMeshStandardMaterial)return;
+    if(!groups.has(part.material))groups.set(part.material,[]);
+    const chain=[];for(let parent=part;parent!==root;parent=parent.parent)chain.unshift(parent);
+    groups.get(part.material).push({part,chain,transform:new THREE.Matrix4(),version:-1,visible:null});part.layers.set(1);
+  });
+  const batches=[];
+  for(const [material,entries] of groups) {
+    let vertices=0,indices=0;
+    for(const entry of entries){entry.offset=vertices;vertices+=entry.part.geometry.attributes.position.count;indices+=entry.part.geometry.index?.count||entry.part.geometry.attributes.position.count;}
+    const geometry=new THREE.BufferGeometry();
+    for(const name of ['position','normal','uv'])geometry.setAttribute(name,new THREE.BufferAttribute(new Float32Array(vertices*(name==='uv'?2:3)),name==='uv'?2:3));
+    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices),1));geometry.setDrawRange(0,0);
+    const object=new THREE.Mesh(geometry,material);object.name='render-batch';object.frustumCulled=false;
+    object.castShadow=entries.some(e=>e.part.castShadow);object.receiveShadow=entries.some(e=>e.part.receiveShadow);root.add(object);
+    batches.push({entries,geometry});
+  }
+  function sync() {
+    for(const {entries,geometry} of batches) {
+      let rebuild=false;
+      for(const entry of entries) {
+        const {part,chain}=entry;matrix.identity();
+        let visible=true;
+        for(const object of chain){object.updateMatrix();matrix.multiply(object.matrix);visible=visible&&object.visible;}
+        if(visible!==entry.visible){entry.visible=visible;rebuild=true;}
+        if(!visible)continue;
+        if(entry.version===part.geometry.attributes.position.version&&entry.transform.equals(matrix))continue;
+        entry.version=part.geometry.attributes.position.version;entry.transform.copy(matrix);normalMatrix.getNormalMatrix(matrix);
+        for(const name of ['position','normal','uv']) {
+          const source=part.geometry.attributes[name],target=geometry.attributes[name];
+          if(!source)continue;
+          for(let i=0;i<source.count;i++) {
+            if(name==='uv')target.setXY(entry.offset+i,source.getX(i),source.getY(i));
+            else {
+              vector.fromBufferAttribute(source,i);
+              if(name==='position')vector.applyMatrix4(matrix);else vector.applyNormalMatrix(normalMatrix);
+              target.setXYZ(entry.offset+i,vector.x,vector.y,vector.z);
+            }
+          }
+          target.addUpdateRange(entry.offset*target.itemSize,source.count*target.itemSize);target.needsUpdate=true;
+        }
+      }
+      if(rebuild) {
+        let count=0;
+        for(const entry of entries)if(entry.visible) {
+          const source=entry.part.geometry,index=source.index,total=index?index.count:source.attributes.position.count;
+          for(let i=0;i<total;i++)geometry.index.array[count++]=entry.offset+(index?index.getX(i):i);
+        }
+        geometry.index.needsUpdate=true;geometry.setDrawRange(0,count);
+      }
+    }
+  }
+  sync();return sync;
+}
 const box = (p, size, pos, mat = metal) => mesh(p, new THREE.BoxGeometry(...size), mat, pos);
 const tube = (p, r, length, pos, mat = metal) => mesh(p, new THREE.CylinderGeometry(r, r, length, 48).rotateX(Math.PI / 2), mat, pos);
 const ring = (p, r, thickness, pos, mat = metal) => mesh(p, new THREE.TorusGeometry(r, thickness, 8, 64), mat, pos);
