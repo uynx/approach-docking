@@ -195,7 +195,6 @@ bool triangle_contact(const Motion& a,const Motion& b,const Triangle& ta,const T
         if(distance<=0.000001) {
             Vec normal=distance>1e-10?flight::scale(sub(gap.a,gap.b),1/distance):flight::length(axisNormal)>0?axisNormal:cross(sub(bb[1],bb[0]),sub(bb[2],bb[0]));
             normal=flight::scale(normal,1/flight::length(normal));
-            if(dot(normal,sub(a.translation,b.translation))>0)normal=flight::scale(normal,-1);
             hit={true,t,flight::scale(flight::add(gap.a,gap.b),0.5),normal,ta.part,tb.part};return true;
         }
         if(speed<1e-14||t>=exit)return false;
@@ -210,13 +209,14 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
     struct Pair {int a,b;};Pair stack[128];int count=1,contacts=0;stack[0]={roots[bodyA.model],roots[bodyB.model]};
     while(count) {
         const auto pair=stack[--count];const auto& na=nodes[pair.a];const auto& nb=nodes[pair.b];
-        const auto ba=swept_bounds(a,na,result.fraction),bb=swept_bounds(b,nb,result.fraction);if(!overlaps(ba,bb))continue;
+        const double limit=clamp(result.fraction+0.00001,0,1);
+        const auto ba=swept_bounds(a,na,limit),bb=swept_bounds(b,nb,limit);if(!overlaps(ba,bb))continue;
         if(na.count&&nb.count) {
             for(int i=na.start;i<na.start+na.count;i++)if(active(a,triangles[i]))for(int j=nb.start;j<nb.start+nb.count;j++)if(active(b,triangles[j])) {
                 Contact hit;
-                if(!triangle_contact(a,b,triangles[i],triangles[j],result.fraction,hit))continue;
+                if(!triangle_contact(a,b,triangles[i],triangles[j],limit,hit))continue;
                 if(hit.fraction<result.fraction-0.00001){result=hit;result.point={};result.normal={};contacts=0;}
-                if(hit.fraction<=result.fraction+0.00001){result.hit=true;result.fraction=hit.fraction;result.partA=hit.partA;result.partB=hit.partB;result.point=flight::add(result.point,hit.point);result.normal=flight::add(result.normal,hit.normal);contacts++;}
+                if(hit.fraction<=result.fraction+0.00001){result.hit=true;result.fraction=result.fraction<hit.fraction?result.fraction:hit.fraction;result.partA=hit.partA;result.partB=hit.partB;result.point=flight::add(result.point,hit.point);result.normal=flight::add(result.normal,hit.normal);contacts++;}
             }
         } else {
             const double sa=flight::length(sub(ba.high,ba.low)),sb=flight::length(sub(bb.high,bb.low));

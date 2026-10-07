@@ -22,5 +22,11 @@ int main() {
     require(!collision::sweep(one,two,1.0/120).hit,"separate capsules do not collide");
     two.position.x=2.5;two.velocity.x=-100;
     require(collision::sweep(one,two,1.0/120).hit,"capsule meshes collide with each other");
+    flight::State crash;flight::Station target;flight::Controls controls;
+    crash.position.z=-0.2;crash.velocity.z=30;
+    crash.omega.x=std::sqrt(flight::earth_mu/std::pow(flight::orbit_radius,3));
+    for(int i=0;i<120;i++){flight::advance_system(&crash,&controls,1,target,flight::step_seconds);flight::judge(crash,0,target);}
+    require(crash.impact_speed>25&&crash.impact_mass>2000,"rebounding out of contact must preserve the main impact event");
+    require(crash.impact_sequence<=2,"a receding capsule must not collide again with the surface it just left");
     std::cout<<"PASS physical mesh coverage and empty space\n";
 }
