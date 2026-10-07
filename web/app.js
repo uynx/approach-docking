@@ -1,4 +1,4 @@
-import { Flight } from './state.js';
+import { Flight,Station } from './state.js';
 import { createScene } from './scene.js';
 import { dockingIndicators } from './flight-view.js';
 import {pilotControls,tutorialLessons} from './tutorial.js';
@@ -310,7 +310,7 @@ try {
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
   const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });
   sim = instance.exports;
-  if(sim.state_size()!==Object.keys(Flight).length) throw new Error('Physics and display versions differ. Reload after rebuilding.');
+  if(sim.state_size()!==Object.keys(Flight).length||sim.station_size()!==Object.keys(Station).length) throw new Error('Physics and display versions differ. Reload after rebuilding.');
   sim.reset_flight();
   $('practice').disabled = false; $('entry').disabled = false;
   $('join-code').value = new URLSearchParams(location.search).get('room') || '';
