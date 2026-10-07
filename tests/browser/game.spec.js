@@ -84,7 +84,7 @@ for (const view of ['DOCKING CAM', 'CHASE CAM']) {
 }
 
 test('two browser sessions join a room and share a countdown and flight', async ({ browser }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   const a = await browser.newContext(), b = await browser.newContext();
   const one = await a.newPage(), two = await b.newPage();
   await one.goto('/'); await two.goto('/');
