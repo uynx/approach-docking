@@ -58,10 +58,16 @@ export function createDamageEffects(scene,station,[own,other]) {
     const cloud=new THREE.Points(geometry,glow);cloud.name='propellant-ejecta';cloud.position.copy(point);scene.add(cloud);
     explosions.push({mesh,cloud,effect,age:0,velocity:velocity.clone()});
   }
+  function fracture(ship) {
+    if(ship.body.time<ship.body.compressionTime||ship.fractured)return;
+    ship.fractured=true;
+    detach(ship,ship.tornParts(false),ship.body.deformationEnergy*0.025,ship.velocity);
+    detach(ship,ship.tornParts(true),ship.body.deformationEnergy*0.015,ship.velocity);
+  }
   function damage(ship,state,dt) {
     const key=`${state[Flight.impactSequence]}:${state[Flight.status]}`;
     if(state[Flight.status]===2&&state[Flight.impactAge]>0&&key!==ship.crashKey&&Math.hypot(...state.slice(17,20))>0.5) {
-      if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
+      if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);fracture(ship);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
       const damageSpeed=state[Flight.impactPart]>=0?Math.min(state[Flight.impactSpeed],Math.sqrt(700/Math.max(1,state[Flight.impactMass]))):state[Flight.impactSpeed];
       const stationImpact=(state[Flight.impactBody]||0)===0;
       ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:state[Flight.impactBody]===2?180:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;
@@ -87,13 +93,7 @@ export function createDamageEffects(scene,station,[own,other]) {
         debris.slice(start).forEach((item,i)=>item.velocity.add(new THREE.Vector3((i?1:-1)*ship.burst.panelSpeed,0,0).applyQuaternion(ship.group.quaternion)));
       }
       ship.dent.crush=ship.body.stationCrush;
-      if(ship.body.time>=ship.body.compressionTime&&!ship.fractured) {
-        ship.fractured=true;
-        const eligible=ship.tornParts(false);
-        detach(ship,eligible,ship.body.deformationEnergy*0.025,ship.velocity);
-        const frame=ship.tornParts(true);
-        detach(ship,frame,ship.body.deformationEnergy*0.015,ship.velocity);
-      }
+      fracture(ship);
     }
   }
   return {

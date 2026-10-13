@@ -218,3 +218,19 @@ test('capsule tearing selects the same parts at different frame rates',()=>{
   }
   assert.ok(results[0].length>0);assert.deepEqual(results[0],results[1]);assert.deepEqual(results[1],results[2]);
 });
+
+test('an immediate weak second hit cannot suppress the first impact tears',()=>{
+  const results=[];
+  for(const interrupted of [false,true]) {
+    const world=new THREE.Scene(),own=spacecraftModel(0),other=spacecraftModel(1);
+    const station={group:new THREE.Group(),fragments:[],offset:new THREE.Vector3(),velocity:new THREE.Vector3(),deform(){}};
+    own.velocity=new THREE.Vector3();world.add(own.group,other.group,station.group);
+    const effects=createDamageEffects(world,station,[own,other]),state=new Array(36).fill(0);
+    Object.assign(state,{6:1,15:2,19:-1,20:30,21:1.2,23:1.5,24:0.001,28:2100,29:80000,30:0.15,31:1,32:-1});
+    effects.update([state,null],new Array(54).fill(0),0);
+    state[24]=1;if(interrupted){state[31]=2;state[20]=0.1;}
+    effects.update([state,null],new Array(54).fill(0),0);
+    results.push(own.fragments.flatMap((part,i)=>!part.visible?[i]:[]));
+  }
+  assert.ok(results[0].length>0);assert.deepEqual(results[0],results[1]);
+});
