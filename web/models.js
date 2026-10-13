@@ -339,12 +339,14 @@ export function spacecraftModel(accent) {
     const panel=new THREE.Mesh(geometry,white);panel.name='capsule-hull';fragments.push(panel);
   }
   mesh(group,new THREE.CircleGeometry(1.3,64),dark,[0,0,1.801]);
-  tube(group,0.72,0.3,[0,0,-2.87],dark);
-  ring(group,0.72,0.055,[0,0,-3.145]);
-  ring(group,0.64,0.025,[0,0,-3.1],white);
-  const hatch=mesh(group,new THREE.CircleGeometry(0.64,64),white,[0,0,-3.075]); hatch.rotation.y=Math.PI;
-  box(group,[0.22,0.06,0.06],[0,0,-3.12],metal);
-  bolts(group,0.72,-3.19,24);
+  const nose=new THREE.Group();nose.name='capsule-docking-assembly';group.add(nose);
+  nose.userData.anchor=new THREE.Vector3(0,0,-2.7);
+  tube(nose,0.72,0.3,[0,0,-2.87],dark);
+  ring(nose,0.72,0.055,[0,0,-3.145]);
+  ring(nose,0.64,0.025,[0,0,-3.1],white);
+  const hatch=mesh(nose,new THREE.CircleGeometry(0.64,64),white,[0,0,-3.075]); hatch.rotation.y=Math.PI;hatch.name='capsule-hatch';
+  box(nose,[0.22,0.06,0.06],[0,0,-3.12],metal);
+  bolts(nose,0.72,-3.19,24);
   const frame=new THREE.Group();
   for (const z of [-1.45,0.85,1.65])for(let sector=0;sector<8;sector++) {
     const arc=new THREE.TorusGeometry(1.355,0.025,8,8,Math.PI/4).rotateZ(sector*Math.PI/4).translate(0,0,z);
@@ -381,16 +383,34 @@ export function spacecraftModel(accent) {
     const mount=pos.clone().addScaledVector(exhaust,-0.2);
     const root=mount.clone(); root.z=THREE.MathUtils.clamp(root.z,-1.4,1.5);
     const radial=Math.hypot(root.x,root.y); if(radial>1.25) {root.x*=1.25/radial;root.y*=1.25/radial;}
-    strut(group,root.toArray(),mount.toArray(),0.09,dark);
-    const bracket=box(group,[0.22,0.2,0.25],mount.toArray(),gold);
+    const nozzleGroup=new THREE.Group();nozzleGroup.userData.anchor=root;group.add(nozzleGroup);
+    strut(nozzleGroup,root.toArray(),mount.toArray(),0.09,dark);
+    const bracket=box(nozzleGroup,[0.22,0.2,0.25],mount.toArray(),gold);
     bracket.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),exhaust);
-    const nozzle=mesh(group,new THREE.LatheGeometry([new THREE.Vector2(0.055,0),new THREE.Vector2(0.052,0.06),new THREE.Vector2(0.08,0.15),new THREE.Vector2(0.125,0.25)],24),metal,mount.toArray());
+    const nozzle=mesh(nozzleGroup,new THREE.LatheGeometry([new THREE.Vector2(0.055,0),new THREE.Vector2(0.052,0.06),new THREE.Vector2(0.08,0.15),new THREE.Vector2(0.125,0.25)],24),metal,mount.toArray());
     nozzle.material=metal;
     nozzle.quaternion.copy(bracket.quaternion);
-    const throat=mesh(group,new THREE.CircleGeometry(0.05,24),dark,mount.clone().addScaledVector(exhaust,0.055).toArray());
+    const throat=mesh(nozzleGroup,new THREE.CircleGeometry(0.05,24),dark,mount.clone().addScaledVector(exhaust,0.055).toArray());
     throat.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),exhaust);
   }
-  batch(group);
+  group.updateMatrixWorld(true);
+  const hardware=[],mounts=new Map();
+  group.traverse(object=>{
+    if(!object.isMesh)return;
+    const owner=object.parent===group?object:object.parent;
+    if(!mounts.has(owner))mounts.set(owner,{parts:[],bounds:new THREE.Box3()});
+    const mount=mounts.get(owner);mount.parts.push(object);
+    object.geometry=object.geometry.clone();
+    object.geometry.applyMatrix4(object.matrixWorld);object.geometry.computeBoundingBox();
+    mount.bounds.union(object.geometry.boundingBox);hardware.push(object);
+  });
+  for(const [owner,mount] of mounts) {
+    mount.anchor=owner.userData.anchor?.clone()||mount.bounds.getCenter(new THREE.Vector3());
+    mount.pristine=mount.anchor.clone();mount.next=mount.anchor.clone();mount.rotation=new THREE.Quaternion();
+    for(const part of mount.parts)part.userData.mount=mount;
+  }
+  group.clear();
+  for(const object of hardware){object.position.set(0,0,0);object.quaternion.identity();group.add(object);}
   frame.updateMatrixWorld(true);
   for(const part of [...frame.children]) {
     part.geometry.applyMatrix4(part.matrixWorld);part.position.set(0,0,0);part.quaternion.identity();
@@ -439,24 +459,58 @@ export function spacecraftModel(accent) {
     if(Math.abs(crush-lastCrush)<1e-8)return;lastCrush=crush;
     const contactX=contact.dot(across),contactY=contact.dot(up);
     const spread=0.65+(body?body.capsuleCrush:0)*0.9;
+    function warp(point,rigidity=1) {
+      if(!body)return point;
+      const projection=point.dot(normal),depth=-3.2+5*(projection-low)/(high-low);
+      const x=point.dot(across),y=point.dot(up),radius=Math.hypot(x,y),angle=Math.atan2(y,x);
+      const dx=x-contactX,dy=y-contactY;
+      const weight=localized?Math.exp(-(dx*dx+dy*dy)/(2*spread*spread)):1;
+      const buckle=weight*rigidity*body.buckle(depth,angle)*Math.min(1,radius/0.25);
+      point.addScaledVector(normal,weight*Math.min(body.displacement(depth),0.4*(high-low)));
+      return point.addScaledVector(across,buckle*Math.cos(angle)).addScaledVector(up,buckle*Math.sin(angle));
+    }
+    const basis=new THREE.Matrix4().makeBasis(across,up,normal).transpose();
+    for(const mount of mounts.values()) {
+      if(!body)mount.anchor.copy(mount.pristine);
+      mount.next.copy(warp(mount.anchor.clone()));
+      const x=warp(mount.anchor.clone().addScaledVector(across,0.02)).sub(warp(mount.anchor.clone().addScaledVector(across,-0.02))).normalize();
+      const y=warp(mount.anchor.clone().addScaledVector(up,0.02)).sub(warp(mount.anchor.clone().addScaledVector(up,-0.02)));
+      y.addScaledVector(x,-x.dot(y)).normalize();
+      const z=new THREE.Vector3().crossVectors(x,y).normalize();
+      mount.rotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z).multiply(basis));
+    }
     for(const {object,original} of deformable) {
       const positions=object.geometry.attributes.position;
+      const mount=object.userData.mount,point=new THREE.Vector3();
       for(let i=0;i<original.length;i+=3) {
-        const point=new THREE.Vector3(original[i],original[i+1],original[i+2]);
-        const projection=point.dot(normal), depth=-3.2+5*(projection-low)/(high-low);
-        const angle=Math.atan2(point.dot(up),point.dot(across));
-        const dx=point.dot(across)-contactX,dy=point.dot(up)-contactY;
-        const weight=localized?Math.exp(-(dx*dx+dy*dy)/(2*spread*spread)):1;
-        const rigidity=object.material===white?1:object.material===metal?0.85:0.55;
-        const buckle=body?weight*rigidity*body.buckle(depth,angle):0;
-        if(body)point.addScaledVector(normal,weight*Math.min(body.displacement(depth),0.4*(high-low)));
-        point.addScaledVector(across,buckle*Math.cos(angle)).addScaledVector(up,buckle*Math.sin(angle));
+        point.set(original[i],original[i+1],original[i+2]);
+        if(body&&mount)point.sub(mount.anchor).applyQuaternion(mount.rotation).add(mount.next);
+        else warp(point,object.material===white?1:object.material===metal?0.85:0.55);
         positions.setXYZ(i/3,point.x,point.y,point.z);
       }
       positions.needsUpdate=true;object.geometry.computeVertexNormals();object.geometry.computeBoundingSphere();
     }
   }
-  function commitDamage() {for(const part of deformable)part.original.set(part.object.geometry.attributes.position.array);lastCrush=-1;}
+  function commitDamage() {
+    for(const part of deformable)part.original.set(part.object.geometry.attributes.position.array);
+    for(const mount of mounts.values())mount.anchor.copy(mount.next);
+    lastCrush=-1;
+  }
+  function tornParts(frame) {
+    return deformable.flatMap(({object,original})=>{
+      if(!object.visible||!fragments.includes(object)||(object.name==='capsule-frame')!==frame)return [];
+      const positions=object.geometry.attributes.position,index=object.geometry.index;
+      const count=index?index.count:positions.count;
+      for(let i=0;i<count;i+=3)for(let edge=0;edge<3;edge++) {
+        const a=index?index.getX(i+edge):i+edge,b=index?index.getX(i+(edge+1)%3):i+(edge+1)%3;
+        const rest=Math.hypot(original[a*3]-original[b*3],original[a*3+1]-original[b*3+1],original[a*3+2]-original[b*3+2]);
+        if(rest<0.02)continue;
+        const length=Math.hypot(positions.getX(a)-positions.getX(b),positions.getY(a)-positions.getY(b),positions.getZ(a)-positions.getZ(b));
+        if(length/rest>1+(frame?0.15:0.25))return [object];
+      }
+      return [];
+    });
+  }
   group.traverse(part=>{if(part.isMesh)part.userData.solid=!part.material.isShaderMaterial;});
-  return {group,plumes,deform,damageDirection,fragments,commitDamage,pressurePanels:panels};
+  return {group,plumes,deform,damageDirection,fragments,commitDamage,tornParts,pressurePanels:panels};
 }

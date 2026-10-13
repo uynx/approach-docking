@@ -13,7 +13,7 @@ export function createDamageEffects(scene,station,[own,other]) {
     for(const owner of [own,other,station])for(const part of [...owner.fragments,...(owner.pressurePanels||[])])part.visible=true;
     station.deform([]);
     for(const ship of [own,other]) {
-      ship.body=undefined;ship.burst=undefined;ship.crashKey='';ship.dent=undefined;ship.fractured=false;ship.frameFractured=false;
+      ship.body=undefined;ship.burst=undefined;ship.crashKey='';ship.dent=undefined;ship.fractured=false;
       ship.deform(null);
     }
   }
@@ -58,7 +58,7 @@ export function createDamageEffects(scene,station,[own,other]) {
       if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
       const damageSpeed=state[Flight.impactPart]>=0?Math.min(state[Flight.impactSpeed],Math.sqrt(700/Math.max(1,state[Flight.impactMass]))):state[Flight.impactSpeed];
       const stationImpact=(state[Flight.impactBody]||0)===0;
-      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:state[Flight.impactBody]===2?180:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;ship.frameFractured=false;
+      ship.body=new CrushBody(2120+state[Flight.fuel]+state[Flight.burnedFuel],damageSpeed,stationImpact?420000:state[Flight.impactBody]===2?180:2200,state[Flight.impactMass],state[Flight.crushForce],state[Flight.stationShare]);ship.crashKey=key;ship.fractured=false;
       ship.normal=new THREE.Vector3(state[Flight.normalX],state[Flight.normalY],-state[Flight.normalZ]);
       ship.point=new THREE.Vector3(state[Flight.impactX],state[Flight.impactY],-state[Flight.impactZ]);
       ship.localNormal=ship.normal.clone().applyQuaternion(quaternion(state).invert());
@@ -81,18 +81,11 @@ export function createDamageEffects(scene,station,[own,other]) {
         debris.slice(start).forEach((item,i)=>item.velocity.add(new THREE.Vector3((i?1:-1)*ship.burst.panelSpeed,0,0).applyQuaternion(ship.group.quaternion)));
       }
       ship.dent.crush=ship.body.stationCrush;
-      if(ship.body.capsuleCrush>0.2&&!ship.fractured) {
+      if(ship.body.time>=ship.body.compressionTime&&!ship.fractured) {
         ship.fractured=true;
-        const eligible=ship.fragments.filter(part=>{
-          part.geometry.computeBoundingSphere();return part.name!=='capsule-frame'&&part.geometry.boundingSphere.center.dot(ship.localNormal)<0;
-        });
+        const eligible=ship.tornParts(false);
         detach(ship,eligible,ship.body.deformationEnergy*0.025,ship.velocity);
-      }
-      if(ship.body.capsuleCrush>0.65&&!ship.frameFractured) {
-        ship.frameFractured=true;
-        const frame=ship.fragments.filter(part=>{
-          part.geometry.computeBoundingSphere();return part.name==='capsule-frame'&&part.geometry.boundingSphere.center.dot(ship.localNormal)<0;
-        });
+        const frame=ship.tornParts(true);
         detach(ship,frame,ship.body.deformationEnergy*0.015,ship.velocity);
       }
     }

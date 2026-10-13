@@ -142,3 +142,53 @@ test('an off-centre strike folds the struck side without repeating around the hu
   assert.ok(struck>0.2,'the contacted hull loses its shape');
   assert.ok(opposite<struck*0.4,'the opposite side does not receive the same fold');
 });
+
+test('a crushed capsule moves its hatch as one rigid plate',()=>{
+  const ship=spacecraftModel(0x6daaa7),vertices=[];
+  for(const part of solidMeshes(ship.group)) {
+    const p=part.geometry.attributes.position;
+    for(let i=0;i<p.count;i++)if(Math.abs(p.getZ(i)+3.075)<1e-5&&Math.hypot(p.getX(i),p.getY(i))<0.641)
+      vertices.push({part,i,before:new THREE.Vector3().fromBufferAttribute(p,i)});
+  }
+  assert.ok(vertices.length>=65,'the actual hatch mesh is sampled');
+  const center=vertices.find(v=>v.before.lengthSq()<3.0751**2&&Math.hypot(v.before.x,v.before.y)<1e-5);
+  const hit=new CrushBody(2200,30);hit.advance(1);
+  ship.damageDirection(new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-3.2));ship.deform(hit);
+  const after=v=>new THREE.Vector3().fromBufferAttribute(v.part.geometry.attributes.position,v.i);
+  for(const vertex of vertices)assert.ok(Math.abs(after(vertex).distanceTo(after(center))-vertex.before.distanceTo(center.before))<1e-5,'the plate retains its radius');
+  assert.ok(after(center).z>center.before.z+0.5,'the mounting structure still crushes');
+  ship.commitDamage();
+  ship.damageDirection(new THREE.Vector3(0.3,0,1).normalize(),new THREE.Vector3(0.8,0,-2.5));
+  ship.deform(hit);
+  for(const vertex of vertices)assert.ok(Math.abs(after(vertex).distanceTo(after(center))-vertex.before.distanceTo(center.before))<1e-5,'a second impact preserves the plate');
+  ship.deform(null);
+  for(const vertex of vertices)assert.ok(after(vertex).distanceTo(vertex.before)<1e-6,'reset restores the fitting');
+});
+
+test('constructing another capsule does not transform shared fittings twice',()=>{
+  const first=solidMeshes(spacecraftModel(0).group),second=solidMeshes(spacecraftModel(0).group);
+  assert.equal(first.length,second.length);
+  first.forEach((part,i)=>assert.deepEqual(part.geometry.attributes.position.array,second[i].geometry.attributes.position.array));
+});
+
+test('opposite off-centre impacts tear the struck side and preserve distant structure',()=>{
+  const broken=[];
+  for(const side of [-1,1]) {
+    const world=new THREE.Scene(),own=spacecraftModel(0),other=spacecraftModel(1);
+    const station={group:new THREE.Group(),fragments:[],offset:new THREE.Vector3(),velocity:new THREE.Vector3(),deform(){}};
+    own.velocity=new THREE.Vector3();world.add(own.group,other.group,station.group);
+    const centers=own.fragments.map(part=>{part.geometry.computeBoundingSphere();return part.geometry.boundingSphere.center.clone();});
+    const effects=createDamageEffects(world,station,[own,other]),state=new Array(36).fill(0);
+    Object.assign(state,{6:1,15:2,19:-1,20:8,21:side*1.2,23:1.5,24:1,28:2100,29:80000,30:0.15,31:1,32:-1});
+    effects.update([state,null],new Array(54).fill(0),0);
+    const torn=own.fragments.flatMap((part,i)=>!part.visible?[i]:[]);
+    assert.ok(torn.length>0,'the loaded side tears');
+    assert.ok(torn.some(i=>own.fragments[i].name==='capsule-frame'),'the struck frame can fail too');
+    assert.ok(torn.reduce((sum,i)=>sum+centers[i].x*side,0)/torn.length>0.4,'tearing concentrates on the struck side');
+    assert.ok(own.fragments.every((part,i)=>centers[i].z<0.8||part.visible),'the distant rear structure remains attached');
+    assert.ok(own.fragments.some((part,i)=>part.visible&&part.name==='capsule-hull'&&centers[i].x*side>0),'folding does not strip every loaded panel');
+    broken.push(torn);
+    effects.reset();assert.ok(own.fragments.every(part=>part.visible));
+  }
+  assert.notDeepEqual(broken[0],broken[1],'the impact location determines what tears');
+});

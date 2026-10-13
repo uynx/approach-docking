@@ -164,7 +164,12 @@ Assumed yield forces are 80 kN for docking collars, 20 kN for module shells and
 panel. Torn panels are removed from collision geometry. Actual mesh sections
 leave the solar wings, capsule skin, structural frame and damaged tanks. Metal
 rings and stringers buckle with the skin. Severe compression can tear individual
-ring arcs and stringers away. They inherit parent
+ring arcs and stringers away. The hatch, docking collar, windows and
+thruster assemblies move and tilt with their mounts while retaining their shape.
+At peak compression, skin tears above 25% tensile edge strain and frame sections
+above 15%. These provisional limits select locally stretched sections rather
+than removing an entire hemisphere, and do not depend on rendering frame rate.
+Fragments inherit parent
 translation and rotational velocity. Skin and frame fracture reserve 4% of the
 contact deformation energy. Mass-weighted debris velocities add zero net linear
 momentum and share their assigned translation/spin energy budget. These fracture thresholds are game model
