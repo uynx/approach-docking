@@ -14,6 +14,13 @@ flight::State aligned() {
     return s;
 }
 int main() {
+    for(int i=0;i<3;i++) {
+        const auto satellite=flight::initial_satellite(i);
+        if(std::hypot(satellite.omega.x,satellite.omega.y)<0.001)
+            throw std::runtime_error("satellite tumble changes its solar-panel normal");
+        for(int j=0;j<i;j++)if(std::abs(flight::length(satellite.omega)-flight::length(flight::initial_satellite(j).omega))<0.001)
+            throw std::runtime_error("independent satellites do not share a rotation period");
+    }
     const auto start=flight::initial();
     near(start.position.z,-18,1e-9,"start close enough for a short approach");
     if(std::hypot(start.position.x,start.position.y)<2 || flight::alignment(start)<8 || flight::alignment(start)>16)

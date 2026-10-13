@@ -16,9 +16,10 @@ Quat mul(Quat a, Quat b) {
 Quat conjugate(Quat a) { return {a.w,-a.x,-a.y,-a.z}; }
 Satellite initial_satellite(int i) {
     const Vec positions[]={{-140,32,380},{180,90,600},{65,-38,270}};
+    const Vec spins[]={{0.004,-0.007,0.003},{-0.009,0.002,0.006},{0.003,0.013,-0.008}};
     const double x=-(0.2+i*0.7)/2,y=-i/2.0,z=(0.4+i)/2;
     const Quat q=mul(mul({__builtin_cos(x),__builtin_sin(x),0,0},{__builtin_cos(y),0,__builtin_sin(y),0}),{__builtin_cos(z),0,0,__builtin_sin(z)});
-    return {positions[i],{positions[i].z*0.0007,0,-positions[i].x*0.0007},{0,0,0.012},q};
+    return {positions[i],{positions[i].z*0.0007,0,-positions[i].x*0.0007},spins[i],q};
 }
 Vec rotate(Quat q, Vec a) {
     const auto r = mul(mul(q,{0,a.x,a.y,a.z}),conjugate(q));
