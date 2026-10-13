@@ -80,6 +80,12 @@ test('crash deformation is independent of rendering frame rate', () => {
   assert.ok(Math.abs(a.displacement(0) - b.displacement(0)) < 1e-8);
 });
 
+test('a centered axial load does not prescribe triangular shell lobes',()=>{
+  const body=new CrushBody(2200,30);body.advance(1);
+  for(const z of [-2.7,-1.45,-0.5,0.85])for(let i=0;i<32;i++)
+    assert.ok(Math.abs(body.buckle(z,i*Math.PI/16)-body.buckle(z,0))<1e-8,'contact loading supplies the angular asymmetry');
+});
+
 
 test('pressure rupture spends stored gas energy and ejects opposing panels without net momentum', () => {
   const burst=new PressureBurst();

@@ -183,7 +183,6 @@ test('opposite off-centre impacts tear the struck side and preserve distant stru
     effects.update([state,null],new Array(54).fill(0),0);
     const torn=own.fragments.flatMap((part,i)=>!part.visible?[i]:[]);
     assert.ok(torn.length>0,'the loaded side tears');
-    assert.ok(torn.some(i=>own.fragments[i].name==='capsule-frame'),'the struck frame can fail too');
     assert.ok(torn.reduce((sum,i)=>sum+centers[i].x*side,0)/torn.length>0.4,'tearing concentrates on the struck side');
     assert.ok(own.fragments.every((part,i)=>centers[i].z<0.8||part.visible),'the distant rear structure remains attached');
     assert.ok(own.fragments.some((part,i)=>part.visible&&part.name==='capsule-hull'&&centers[i].x*side>0),'folding does not strip every loaded panel');

@@ -159,6 +159,8 @@ bodies; the station's larger inertia produces slower rotation.
 Permanent visual crushing uses dissipated contact energy and bounded compression.
 The combined crush distance is capped at 1.5 m, with material-dependent sharing
 between the two objects. Earlier dents persist across subsequent impacts.
+Centered loads use axial folds; contact location weights the asymmetric damage.
+The fold profile does not impose triangular lobes around the circumference.
 Assumed yield forces are 80 kN for docking collars, 20 kN for module shells and
 2 kN for solar panels. A solar-wing fracture consumes at most 700 J, including
 350 J reserved for fragment motion. A fast capsule can therefore tear through a

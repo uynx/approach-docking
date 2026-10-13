@@ -465,7 +465,7 @@ export function spacecraftModel(accent) {
       const x=point.dot(across),y=point.dot(up),radius=Math.hypot(x,y),angle=Math.atan2(y,x);
       const dx=x-contactX,dy=y-contactY;
       const weight=localized?Math.exp(-(dx*dx+dy*dy)/(2*spread*spread)):1;
-      const buckle=weight*rigidity*body.buckle(depth,angle)*Math.min(1,radius/0.25);
+      const buckle=weight*rigidity*body.buckle(depth)*Math.min(1,radius/0.25);
       point.addScaledVector(normal,weight*Math.min(body.displacement(depth),0.4*(high-low)));
       return point.addScaledVector(across,buckle*Math.cos(angle)).addScaledVector(up,buckle*Math.sin(angle));
     }

@@ -30,9 +30,9 @@ export class CrushBody {
   get capsuleCrush() { return (1-this.stationShare) * this.permanentCrush; }
   get stationCrush() { return this.stationShare * this.permanentCrush; }
   displacement(z) { return this.capsuleCrush * Math.max(0, Math.min(1, (1.8 - z) / 5)) ** 2; }
-  buckle(z, angle) {
+  buckle(z) {
     const t = Math.max(0, Math.min(1, (z + 3.2) / 5));
-    const crease=Math.sin(t*Math.PI*7+0.8*Math.sin(angle*3+0.4))+0.35*Math.sin(t*Math.PI*13+angle*2+1.1);
+    const crease=Math.sin(t*Math.PI*7)+0.35*Math.sin(t*Math.PI*13+1.1);
     return Math.min(0.45, Math.sqrt(this.capsuleCrush * 0.2)) * (1-t) * crease / 1.35;
   }
   energy() { return 0.5 * this.mass * this.capsuleVelocity ** 2 + 0.5 * this.stationMass * this.stationVelocity ** 2; }
