@@ -144,6 +144,7 @@ impulse includes inverse mass and rotational inertia for both bodies. The capsul
 has a 2,120 kg dry mass plus remaining propellant; the station mass is 420,000 kg.
 Two capsules can collide with each other. The three 180 kg satellites have
 shared positions, attitudes and velocities, and recoil when a capsule hits them.
+Each satellite starts with a different tumble axis and angular speed.
 Browser prediction processes both pilots in the server's slot order.
 Camera clearance and the nose ray query the current visible meshes, including
 detached hardware. Exhaust, plasma, flashes, guidance and hidden parts are excluded.
@@ -172,7 +173,10 @@ than removing an entire hemisphere, and do not depend on rendering frame rate.
 Fragments inherit parent
 translation and rotational velocity. Skin and frame fracture reserve 4% of the
 contact deformation energy. Mass-weighted debris velocities add zero net linear
-momentum and share their assigned translation/spin energy budget. These fracture thresholds are game model
+momentum and share their assigned translation/spin energy budget. Fragment spins
+vary by piece, inherit parent rotation and balance the angular momentum added by
+separation velocities. Their scalar inertia estimate uses a bounding sphere.
+These fracture thresholds are game model
 parameters, not measurements of a particular spacecraft.
 
 Cabin rupture spends stored ideal-gas energy on opposing hatch panels and venting.

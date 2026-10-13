@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CrushBody, PressureBurst, fractureVelocities, FuelExplosion } from '../web/damage.js';
+import { CrushBody, PressureBurst, fractureVelocities, fractureMotion, FuelExplosion } from '../web/damage.js';
 
 test('a stationary hull remains stationary in vacuum', () => {
   const hull = new CrushBody(2200, 0);
@@ -26,6 +26,21 @@ test('heavy frame sections and light skin share a finite fracture energy budget'
   assert.ok(velocities.every(v=>v.every(Number.isFinite)));
   assert.ok(Math.hypot(...momentum)<1e-8,'fracture does not propel the combined wreck');
   assert.ok(energy>5900&&energy<=6000.000001);
+});
+
+test('breakup distributes finite energy without adding linear or angular momentum',()=>{
+  const masses=[2,2,5.5,1.3],inertias=[0.7,0.7,1.2,0.3],centers=[[1,0,0],[0,2,0],[-1,0,1],[0,-2,-1]];
+  const {velocities,spins}=fractureMotion(masses,inertias,centers,700),linear=[0,0,0],angular=[0,0,0];let energy=0;
+  velocities.forEach((v,i)=>{
+    const p=v.map(x=>x*masses[i]),r=centers[i];
+    const orbital=[r[1]*p[2]-r[2]*p[1],r[2]*p[0]-r[0]*p[2],r[0]*p[1]-r[1]*p[0]];
+    for(let j=0;j<3;j++){linear[j]+=p[j];angular[j]+=orbital[j]+inertias[i]*spins[i][j];}
+    energy+=0.5*masses[i]*Math.hypot(...v)**2+0.5*inertias[i]*Math.hypot(...spins[i])**2;
+  });
+  assert.ok(Math.hypot(...linear)<1e-8);assert.ok(Math.hypot(...angular)<1e-8);
+  assert.ok(energy>699&&energy<=700.000001);
+  const still=fractureMotion(masses,inertias,centers,0);
+  assert.ok([...still.velocities,...still.spins].flat().every(x=>x===0));
 });
 
 test('fuel and oxidizer release finite chemical energy and cool while expanding in vacuum',()=>{

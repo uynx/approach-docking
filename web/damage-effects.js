@@ -1,6 +1,6 @@
 import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
-import { CrushBody, PressureBurst, fractureVelocities, FuelExplosion } from './damage.js';
+import { CrushBody, PressureBurst, fractureVelocities, fractureMotion, FuelExplosion } from './damage.js';
 
 export function createDamageEffects(scene,station,[own,other]) {
   const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
@@ -21,16 +21,22 @@ export function createDamageEffects(scene,station,[own,other]) {
     parts=parts.filter(part=>part.visible);
     if(!parts.length)return;
     owner.group.updateMatrixWorld(true);
-    const masses=parts.map(part=>part.userData.mass||2),velocities=fractureVelocities(parts.length,masses,energy*0.8);
-    parts.forEach((part,i)=>{
+    const masses=parts.map(part=>part.userData.mass||2),inertias=[],centers=[];
+    const fragments=parts.map((part,i)=>{
       const geometry=part.geometry.clone();geometry.computeBoundingBox();geometry.computeBoundingSphere();
       const center=geometry.boundingBox.getCenter(new THREE.Vector3());geometry.translate(-center.x,-center.y,-center.z);
       const fragment=new THREE.Mesh(geometry,part.material);fragment.name=part.name+'-fragment';
       fragment.userData.solid=true;
       fragment.castShadow=true;fragment.receiveShadow=true;
       fragment.position.copy(part.localToWorld(center));part.getWorldQuaternion(fragment.quaternion);scene.add(fragment);part.visible=false;
+      inertias.push(0.4*masses[i]*Math.max(0.1,geometry.boundingSphere.radius**2));centers.push(fragment.position.clone().sub(owner.group.position).toArray());
+      return fragment;
+    });
+    const {velocities,spins}=fractureMotion(masses,inertias,centers,energy);
+    fragments.forEach((fragment,i)=>{
       const v=new THREE.Vector3(...velocities[i]).add(velocity).add(new THREE.Vector3().crossVectors(owner.angularVelocity||new THREE.Vector3(),fragment.position.clone().sub(owner.centerOfMass||owner.group.position)));
-      debris.push({mesh:fragment,velocity:v,spin:new THREE.Vector3(0.3,0.5,-0.2).normalize().multiplyScalar(Math.sqrt(0.4*energy/(parts.length*masses[i]*Math.max(0.1,geometry.boundingSphere?.radius**2||1))))});
+      const spin=new THREE.Vector3(...spins[i]).add(owner.angularVelocity||new THREE.Vector3());
+      debris.push({mesh:fragment,velocity:v,spin});
     });
   }
   function explode(owner,mass,point,velocity) {

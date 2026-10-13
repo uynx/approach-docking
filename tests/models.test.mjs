@@ -192,3 +192,30 @@ test('opposite off-centre impacts tear the struck side and preserve distant stru
   }
   assert.notDeepEqual(broken[0],broken[1],'the impact location determines what tears');
 });
+
+test('broken solar tiles tumble with different axes and periods',()=>{
+  const world=new THREE.Scene(),station=stationModel(1,false),own=spacecraftModel(0),other=spacecraftModel(1);
+  station.offset=new THREE.Vector3();station.velocity=new THREE.Vector3();
+  const effects=createDamageEffects(world,station,[own,other]),state=new Array(54).fill(0);state[13]=1;
+  effects.update([null,null],state,0);effects.advance(0.2);
+  const pieces=world.children.filter(p=>p.name==='station-panel-fragment');
+  assert.equal(pieces.length,24);
+  const speeds=pieces.map(p=>2*Math.acos(Math.min(1,Math.abs(p.quaternion.w)))/0.2);
+  assert.ok(Math.max(...speeds)-Math.min(...speeds)>0.1,'equal-sized panels have different periods');
+  const axes=pieces.map(p=>new THREE.Vector3(p.quaternion.x,p.quaternion.y,p.quaternion.z).normalize());
+  assert.ok(axes.some(axis=>Math.abs(axis.dot(axes[0]))<0.9),'panel normals do not rotate together');
+});
+
+test('capsule tearing selects the same parts at different frame rates',()=>{
+  const results=[];
+  for(const steps of [1,30,60]) {
+    const world=new THREE.Scene(),own=spacecraftModel(0),other=spacecraftModel(1);
+    const station={group:new THREE.Group(),fragments:[],offset:new THREE.Vector3(),velocity:new THREE.Vector3(),deform(){}};
+    own.velocity=new THREE.Vector3();world.add(own.group,other.group,station.group);
+    const effects=createDamageEffects(world,station,[own,other]),state=new Array(36).fill(0);
+    Object.assign(state,{6:1,15:2,19:-1,20:30,21:1.2,23:1.5,28:2100,29:80000,30:0.15,31:1,32:-1});
+    for(let i=1;i<=steps;i++){state[24]=i/steps;effects.update([state,null],new Array(54).fill(0),1/steps);}
+    results.push(own.fragments.flatMap((part,i)=>!part.visible?[i]:[]));
+  }
+  assert.ok(results[0].length>0);assert.deepEqual(results[0],results[1]);assert.deepEqual(results[1],results[2]);
+});

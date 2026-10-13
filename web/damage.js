@@ -85,12 +85,29 @@ export function fractureVelocities(count, mass, energy) {
     result.push(v,v.map(x=>-x));
   }
   if(count%2)result.push([0,0,0]);
+  result.forEach((v,i)=>v.forEach((x,j)=>v[j]=x*(0.5+(i+1)*0.754877666%1)));
   const total=masses.reduce((a,b)=>a+b,0),mean=[0,0,0];
   result.forEach((v,i)=>v.forEach((x,j)=>mean[j]+=x*masses[i]/total));
   const balanced=result.map(v=>v.map((x,j)=>x-mean[j]));
   const kinetic=balanced.reduce((sum,v,i)=>sum+0.5*masses[i]*Math.hypot(...v)**2,0);
   const speed=kinetic>0?Math.sqrt(Math.max(0,energy)/kinetic):0;
   return balanced.map(v=>v.map(x=>x*speed));
+}
+
+export function fractureMotion(masses,inertias,centers,energy) {
+  const velocities=fractureVelocities(masses.length,masses,energy*0.8);
+  const spins=fractureVelocities(masses.length,inertias,energy*0.2),angular=[0,0,0];
+  const totalInertia=inertias.reduce((sum,i)=>sum+i,0);
+  velocities.forEach((v,i)=>{
+    const p=v.map(x=>x*masses[i]),r=centers[i];
+    angular[0]+=r[1]*p[2]-r[2]*p[1];
+    angular[1]+=r[2]*p[0]-r[0]*p[2];
+    angular[2]+=r[0]*p[1]-r[1]*p[0];
+  });
+  spins.forEach(v=>v.forEach((x,j)=>v[j]=x-angular[j]/totalInertia));
+  const kinetic=velocities.reduce((sum,v,i)=>sum+0.5*(masses[i]*Math.hypot(...v)**2+inertias[i]*Math.hypot(...spins[i])**2),0);
+  const scale=kinetic>0?Math.sqrt(Math.max(0,energy)/kinetic):0;
+  return {velocities:velocities.map(v=>v.map(x=>x*scale)),spins:spins.map(v=>v.map(x=>x*scale))};
 }
 
 export class FuelExplosion {
