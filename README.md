@@ -1,8 +1,41 @@
 # Approach
 
-Two players dock spacecraft at separate ports on a station. Each player joins
-from a browser using a room code. The game includes solo practice and an in-game
-guide. Desktop keyboard controls come first; touch controls are not implemented.
+Two players fight spacecraft duels at `/arena`, joining from separate browsers
+with a room code. Solo recovery training teaches control of a drifting, spinning
+ship. Docking flight and a twelve-scene crash lab remain available at `/` and
+`/?lab=1`. Desktop keyboard controls come first; touch controls are not implemented.
+
+## Combat
+
+Choose Station shipyard or Orbital scrapyard, create a room, share the code and
+both press Ready to fight. First to three round wins takes the match. Rounds last
+two minutes. Destroy the other hull, or have more hull remaining when time expires.
+Equal hull at timeout draws the round. Leaving forfeits; a disconnected pilot
+has ten seconds to reconnect. Leaving the 180 m arena damages the hull.
+
+Mouse movement aims the weapon independently of the ship. Left click or Space
+fires. WASD translates, R/F rises and descends, arrows pitch and yaw, and Q/E
+roll. B applies opposing translation thrust to brake. C toggles a stable camera
+and a camera that follows ship rotation. Right mouse drag looks around; V resets
+the view. Click the flight view to capture the mouse; Esc releases it.
+
+Lasers deal 25 hull damage with a quarter-second cooldown and 240 m range.
+Station hardware and intact ship surfaces block shots. Hull hits detach sections
+and remove their colliders. Damage weakens individual thruster pairs, so damaged
+ships accelerate and turn differently. Destroyed ships break apart.
+
+Two power slots use 1/2 or the HUD buttons. Pickups refill empty slots and add
+propellant. Available powers are Spin bug, Tow cable, Emergency kick, Decoy,
+Scrap armor and Recovery override. Powers can disrupt rotation, pull both craft,
+add a thrust impulse, display a false ship, absorb damage or damp rotation.
+The in-game rules describe their use and timing.
+
+The native server owns hits, cooldowns, damage, inventory, pickup proximity and
+round scores. Clients submit bounded flight axes, unit aim directions and action
+requests. Generated callsigns are public labels. Persistent identity and Elo
+are not implemented.
+
+## Docking
 
 Ships start 18 metres ahead, offset sideways and tilted 8–16 degrees in a random direction. Translation jets provide 0.8 m/s² at the starting mass. Ships keep coasting and turning after
 the pilot releases the controls. Opposite thrust slows them down. A successful dock beats a failed attempt. Successful docks
@@ -23,7 +56,7 @@ devenv shell -- cmake --build build -j2
 flock -n /tmp/approach-preview-8080.lock build/approach --port 8080 --web build/web
 ```
 
-Open <http://localhost:8080>. Stop the server with Ctrl+C. To join from another
+Open <http://localhost:8080/arena>. Stop the server with Ctrl+C. To join from another
 computer on your network, use the host computer's LAN address and allow its port
 8080 through the firewall. Localhost always refers to the device opening the link.
 
@@ -35,7 +68,7 @@ profile; the failure occurs while initializing graphics. Chromium also works.
 
 ```sh
 devenv shell -- ctest --test-dir build --output-on-failure
-node --test tests/damage.test.mjs tests/flight-view.test.mjs tests/models.test.mjs tests/tutorial.test.mjs
+node --test tests/combat.test.mjs tests/damage.test.mjs tests/flight-view.test.mjs tests/models.test.mjs tests/tutorial.test.mjs
 CHROMIUM_PATH=/path/to/chromium npm run test:browser
 ```
 
@@ -43,19 +76,29 @@ Native tests cover flight dynamics, complete two-pilot docking and rematches,
 reconnection, input validation, and room departures. The network test uses real
 WebSockets. The WASM test compares a flight trajectory against the native build.
 Browser tests cover rendering, controls, room joins, and blocked graphics.
+Combat checks include server-owned hits, cooldowns, damaged steering, armor,
+destruction and two-browser round scoring.
 
 ## Performance
 
-Station and capsule parts share material batches. Original meshes still own
+Station, capsule and detached debris parts share material batches. Original meshes still own
 damage and collision queries; render copies add no colliders. Changed vertices
 upload only when geometry changes, and detached parts leave holes in the batches.
 Camera and nose rays use refitted triangle trees. Shared collision sweeps cache
 triangle motion, use spatial splits and skip removed hardware.
 
-The scene caps its drawing buffer at 2,073,600 pixels, including after resize,
-and uses 2,048-pixel shadows. Earth retains its 16,384 × 8,192 texture.
+The graphics selector works in combat, docking and the crash lab. Balanced caps
+the drawing buffer at 1280 × 720 pixels, smoothest at 960 × 540, and sharpest at
+1920 × 1080, including after resize. The HUD remains at the screen's resolution.
+Shadows use 2,048 pixels. Earth retains its 16,384 × 8,192 texture.
 One packed WASM read supplies each displayed frame. HTTP assets stream from disk
 and revalidate with ETags, so unchanged textures remain cached across reloads.
+Combat instruments update ten times per second. Local simulation yields after
+eight milliseconds of completed physics work per frame and retains queued ticks.
+An individual expensive tick can exceed this budget. A severe collision can
+temporarily slow local simulation before it catches up; the server keeps its
+fixed simulation ticks. Station dents cache their local influence weights and
+leave unaffected geometry untouched.
 
 ```sh
 CHROMIUM_PATH=/path/to/chromium node tools/benchmark.mjs /tmp/approach-performance.json
@@ -68,6 +111,7 @@ Controlled callback timings measure CPU and command submission, not sustained
 hardware FPS. `REALTIME=1` samples actual animation frame intervals in a fresh page.
 `GPU_BACKEND=hardware` requests OpenGL; check the reported backend for fallback.
 `PROBE=no-shadows` or `PROBE=no-render` isolates rendering costs.
+`ARENA=1` profiles combat training; `WIDTH` and `HEIGHT` set the viewport.
 `PHYSICS_BUDGET_MS` optionally fails if a scenario's 95th-percentile tick exceeds
 the supplied budget. Dense wing strikes can still exceed the 8.33 ms physics interval.
 
@@ -237,7 +281,8 @@ contact, but atmospheric entry is no longer a selectable practice mode.
 
 This is a simplified interactive physics model, not a validated structural or
 combustion simulation. Shared physics meshes retain their original shape except for
-removed solar panels and ruptured station tanks. Deformation is analytic, not a
+removed solar panels, ruptured station tanks and laser-detached capsule sections.
+Deformation is analytic, not a
 finite-element solution. Visual debris does not change parent inertia or perform
 secondary collisions, orbital propagation or aerodynamic interaction. Fuel mass
 loss, fragment recoil and explosion coupling are approximations. Gas mixing,
@@ -256,9 +301,13 @@ not resolved. Station recoil is integrated around the original reference orbit.
 | `tools/export-meshes.mjs` | Exports collision triangles from the same factories used by the browser |
 | `src/state_io.hpp` | Ordered state fields shared by native JSON and WASM reads/restores |
 | `src/game.cpp` | Rooms, authoritative ticks, input validation, scoring and round lifecycle |
+| `src/combat.cpp` | Duel rules, map setup, weapon hits, damaged thrusters, powers and round scoring |
 | `src/wasm.cpp` | Browser interface to the shared physics |
 | `web/state.js` | Named browser indices for the state format |
 | `web/app.js` | Input, network reconciliation, practice lifecycle and instruments |
+| `web/arena.js` | Combat controls, rooms, recovery training and HUD |
+| `web/combat-view.js` | Independent aim, manual flight axes and packed combat reads |
+| `web/combat-effects.js` | Laser pulses, impacts, tethers, armor and visual decoys |
 | `web/scene.js` | Cameras, lighting, Earth, views and placement |
 | `web/models.js` | Geometry, materials, detachable sections and deformation |
 | `web/damage.js` | Pure crush, pressure and fragment-energy calculations |
@@ -271,6 +320,9 @@ state sizes and the protocol tests together. Browser startup checks the format
 size, and the WASM suite round-trips every field. Native/WASM trajectory tests
 also check collision metadata and station motion against an independent native
 serialization fixture.
+Flight state currently has 40 fields, including four 32-bit missing-fragment
+masks. Combat rounds have a separate 129-value packed representation. Update
+the independent trajectory fixture alongside shared visitors when fields change.
 
 A new round calls `resetSimulation()` explicitly. Damage effects own all debris,
 flashes, visibility and dent history, including damage caused only by the other
