@@ -9,7 +9,7 @@
 </head>
 <body>
   <canvas id="viewport" aria-label="Spacecraft combat arena"></canvas>
-  <header><a class="brand" href="/arena">APPROACH <span>ORBITAL COMBAT</span></a><nav><span id="connection">LOADING</span><button id="combat-camera">Camera: stable</button><button id="menu">Menu</button><button id="help">Controls</button><a href="/?lab=1">Crash lab</a><a href="/">Docking flight</a></nav></header>
+  <header><a class="brand" href="/arena">APPROACH <span>ORBITAL COMBAT</span></a><nav><span id="connection">LOADING</span><label class="sr-only" for="graphics-quality">Graphics quality</label><select id="graphics-quality"><option value="balanced">Graphics: balanced</option><option value="performance">Graphics: smoothest</option><option value="sharp">Graphics: sharpest</option></select><button id="combat-camera">Camera: stable</button><button id="menu">Menu</button><button id="help">Controls</button><a href="/?lab=1">Crash lab</a><a href="/">Docking flight</a></nav></header>
   <main id="hangar">
     <div class="intro"><span class="eyebrow">SPACECRAFT PVP</span><h1>Keep control.<br>Take the shot.</h1><p>Fight another pilot with lasers, thrusters and disruptive powerups. Your ship keeps its momentum. Damage weakens its thrusters.</p><p class="rules">Destroy the other ship to win a round. First to three round wins takes the match. Collect supply pods to refill your two power slots.</p></div>
     <section class="panel" aria-label="Combat setup">

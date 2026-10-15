@@ -4,6 +4,7 @@ import { dockingIndicators } from './flight-view.js';
 import {pilotControls,tutorialLessons} from './tutorial.js';
 
 const $ = id => document.getElementById(id);
+const pixelBudgets={performance:960*540,balanced:1280*720,sharp:1920*1080};
 let sim, scene, socket, snapshot, slot = 0, practice = false, active = false;
 let sequence = 0, room = '', lastFrame = performance.now(), accumulator = 0, toastTimer;
 let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotAt = 0;
@@ -283,9 +284,11 @@ function frame(now) {
   if(demo&&!demo.paused)demo.clock+=delta*1000;
   if (active && !demo?.paused && (practice || snapshot?.phase === 'flight' || snapshot?.phase === 'finished') && (practice || performance.now() - lastSnapshotAt < 1000)) {
     accumulator += delta*(demo&&!sim.component(Flight.status)?2:1);
+    const deadline=performance.now()+8;
     while (accumulator >= 1 / 120) {
       if(demo)axes=demo.index===0?pilotControls(current()):[0,0,demo.index===1?1:0,0,0,0];
       sim.step_flight(...axes,slot); if (practice) sim.judge_flight(slot); accumulator -= 1 / 120;
+      if(performance.now()>=deadline)break;
     }
   }
   sim.read_frame(slot);
@@ -308,7 +311,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 try {
-  scene = createScene($('viewport'));
+  scene = createScene($('viewport'),{pixelBudget:pixelBudgets.balanced});
+  $('graphics-quality').onchange=()=>scene.setPixelBudget(pixelBudgets[$('graphics-quality').value]);
   const response=await fetch('/physics.wasm');
   if (!response.ok) throw new Error('Physics module is missing. Rebuild the project.');
   const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { env: { acos: Math.acos, sin: Math.sin, cos: Math.cos, exp: Math.exp, log: Math.log } });

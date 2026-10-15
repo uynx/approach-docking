@@ -5,8 +5,8 @@ import { createDamageEffects } from './damage-effects.js';
 import { createCombatEffects } from './combat-effects.js';
 import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera,meshHit,batchRendering } from './models.js';
 
-export function createScene(canvas) {
-  const context = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
+export function createScene(canvas,{pixelBudget=1920*1080}={}) {
+  const context = canvas.getContext('webgl2', { antialias: true, alpha:false, desynchronized:true, powerPreference: 'high-performance' });
   if (!context || context.isContextLost() || !context.getParameter(context.VERSION)) {
     throw new Error('WebGL is blocked or unavailable. In Brave, try Standard fingerprinting protection for this site, then reload. Chromium also works.');
   }
@@ -31,6 +31,7 @@ export function createScene(canvas) {
   const station = stationModel(renderer.capabilities.getMaxAnisotropy());scene.add(station.group);
   const own = spacecraftModel(0x6daaa7), other = spacecraftModel(0xc6a06c);
   scene.add(own.group,other.group);
+  for(const model of [station,own,other])model.group.userData.cameraBounds=new THREE.Box3().setFromObject(model.group).getBoundingSphere(new THREE.Sphere());
   for(const model of [station,own,other])model.group.traverse(part=>{if(part.isMesh&&part.material.isMeshStandardMaterial){part.castShadow=true;part.receiveShadow=true;}});
   const renderBatches=[station,own,other].map(model=>batchRendering(model.group));
   const plasma=new THREE.Mesh(new THREE.SphereGeometry(1,48,32),new THREE.ShaderMaterial({
@@ -54,7 +55,9 @@ export function createScene(canvas) {
   moon.name='moon';moon.position.set(2800,1200,-19500);moon.rotation.y=1.7;sky.add(moon);
   const satellites=new THREE.Group();satellites.name='orbital-satellites';scene.add(satellites);
   for(let i=0;i<3;i++) {
-    const satellite=satelliteModel().group;satellite.position.set([-140,180,65][i],[32,90,-38][i],[-380,-600,-270][i]);
+    const satellite=satelliteModel().group;
+    satellite.userData.cameraBounds=new THREE.Box3().setFromObject(satellite).getBoundingSphere(new THREE.Sphere());
+    satellite.position.set([-140,180,65][i],[32,90,-38][i],[-380,-600,-270][i]);
     satellite.rotation.set(0.2+i*0.7,i,0.4+i);
     satellites.add(satellite);
   }
@@ -97,7 +100,7 @@ export function createScene(canvas) {
   const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
   function place(ship,s,slot) {ship.group.position.set(...shipPosition(s,slot));ship.group.quaternion.copy(quaternion(s));}
   function resize() {
-    renderer.setPixelRatio(Math.min(devicePixelRatio,1.5,Math.sqrt(1920*1080/(innerWidth*innerHeight))));
+    renderer.setPixelRatio(Math.min(devicePixelRatio,1.5,Math.sqrt(pixelBudget/(innerWidth*innerHeight))));
     renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
     skyCamera.aspect=camera.aspect;skyCamera.updateProjectionMatrix();
   }
@@ -109,6 +112,7 @@ export function createScene(canvas) {
   }
   return {
     ready,
+    setPixelBudget(budget){pixelBudget=budget;resize();},
     resetSimulation() {damageEffects.reset();lastStatus=0;capturedAt=-Infinity;capturePulse.visible=false;orbitTime=0;earthLongitude=Math.random()*Math.PI*2;},
     resetCamera() {lookYaw=0;lookPitch=0;look.identity();return dockingCamera;},
     impactView() {dockingCamera=false;lookYaw=-0.65;lookPitch=0.15;look.setFromEuler(new THREE.Euler(lookPitch,lookYaw,0,'YXZ'));},
@@ -174,8 +178,9 @@ export function createScene(canvas) {
         if(battle)offset.applyQuaternion(look).applyQuaternion(cameraQ);
         else if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
         scene.updateMatrixWorld(true);
-        const solids=solidMeshes(scene,own.group);
-        camera.position.copy(clipMeshCamera(origin,origin.clone().add(offset),solids));
+        const desired=origin.clone().add(offset);
+        const solids=solidMeshes(scene,own.group,new THREE.Line3(origin,desired));
+        camera.position.copy(clipMeshCamera(origin,desired,solids));
         camera.up.set(0,1,0);
         if(dockingCamera||battle&&!stableCombatCamera) camera.up.applyQuaternion(q);
         const aim=battle?origin.clone().add(new THREE.Vector3(0,0,-40).applyQuaternion(look).applyQuaternion(cameraQ)):dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
@@ -190,7 +195,7 @@ export function createScene(canvas) {
         } else {project(marker,station.group.localToWorld(new THREE.Vector3(portX,0,0)));marker.dataset.state=indicators.ready?'ready':!indicators.speed?'brake':'correct';}
         if(!battle&&!state[Flight.status]&&thermal.altitude>150000) {
           const nose=new THREE.Vector3(0,0,-3.2).applyQuaternion(q).add(origin);
-          const hit=meshHit(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q),solids);
+          const hit=meshHit(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q),solidMeshes(scene,own.group));
           if(hit) {
             const normal=hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
             noseRay.geometry.attributes.position.setXYZ(0,nose.x,nose.y,nose.z);

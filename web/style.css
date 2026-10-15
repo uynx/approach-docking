@@ -12,3 +12,5 @@ header{position:fixed;z-index:4;top:0;left:0;right:0;display:flex;align-items:ce
 @media(prefers-reduced-motion:reduce){.result-card,.capture-symbol{animation:none!important}}
 #tutorial{position:fixed;top:100px;left:28px;width:min(320px,85vw);pointer-events:auto;text-shadow:0 2px 8px #000;background:linear-gradient(90deg,#0309129c,transparent);padding:14px 16px;border-left:1px solid #8ff9da80}#tutorial-step{font:9px monospace;letter-spacing:.12em;color:var(--cyan)}#tutorial h2{font-size:20px;margin:12px 0}#tutorial p{font-size:12px;color:#d2dfe8;min-height:58px}#tutorial-keys{display:block;min-height:25px;font:11px monospace;color:var(--amber)}#tutorial button{font-size:10px;padding:7px}#tutorial-exit{color:var(--cyan)}#watch-tutorial{margin-bottom:10px}
 #tutorial-scene{width:100%;background:#0a1723;color:var(--ink);border:1px solid #8ba7b64d;padding:8px;font:11px monospace;border-radius:4px}nav a{font-size:11px;padding:7px 10px;color:var(--cyan);text-decoration:none}
+
+nav select{background:#0a1723;color:var(--ink);border:1px solid #8ba7b64d;padding:7px;font:11px Arial,sans-serif;border-radius:4px;max-width:150px}

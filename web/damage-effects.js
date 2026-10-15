@@ -1,14 +1,17 @@
 import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
 import { CrushBody, PressureBurst, fractureVelocities, fractureMotion, FuelExplosion } from './damage.js';
+import { batchRendering } from './models.js';
 
 export function createDamageEffects(scene,station,[own,other]) {
   const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
-  const debris=[], explosions=[], dents=[];
+  const debris=[], explosions=[], dents=[], batches=[];
   function reset() {
     for(const item of [...debris,...explosions]) {
-      for(const mesh of [item.mesh,item.cloud].filter(Boolean)) {scene.remove(mesh);mesh.geometry.dispose();if(item.effect)mesh.material.dispose();}
+      for(const mesh of [item.mesh,item.cloud].filter(Boolean)) {mesh.removeFromParent();mesh.geometry.dispose();if(item.effect)mesh.material.dispose();}
     }
+    for(const {group} of batches){group.removeFromParent();for(const part of group.children)part.geometry.dispose();}
+    batches.length=0;
     debris.length=0;explosions.length=0;dents.length=0;
     for(const owner of [own,other,station])for(const part of [...owner.fragments,...(owner.pressurePanels||[])])part.visible=true;
     station.deform([]);
@@ -20,6 +23,7 @@ export function createDamageEffects(scene,station,[own,other]) {
   function detach(owner,parts,energy,velocity) {
     parts=parts.filter(part=>part.visible);
     if(!parts.length)return;
+    const group=new THREE.Group();scene.add(group);
     owner.group.updateMatrixWorld(true);
     const masses=parts.map(part=>part.userData.mass||2),inertias=[],centers=[];
     const fragments=parts.map((part,i)=>{
@@ -28,7 +32,7 @@ export function createDamageEffects(scene,station,[own,other]) {
       const fragment=new THREE.Mesh(geometry,part.material);fragment.name=part.name+'-fragment';
       fragment.userData.solid=true;
       fragment.castShadow=true;fragment.receiveShadow=true;
-      fragment.position.copy(part.localToWorld(center));part.getWorldQuaternion(fragment.quaternion);scene.add(fragment);part.visible=false;
+      fragment.position.copy(part.localToWorld(center));part.getWorldQuaternion(fragment.quaternion);group.add(fragment);part.visible=false;
       inertias.push(0.4*masses[i]*Math.max(0.1,geometry.boundingSphere.radius**2));centers.push(fragment.position.clone().sub(owner.group.position).toArray());
       return fragment;
     });
@@ -38,6 +42,7 @@ export function createDamageEffects(scene,station,[own,other]) {
       const spin=new THREE.Vector3(...spins[i]).add(owner.angularVelocity||new THREE.Vector3());
       debris.push({mesh:fragment,velocity:v,spin});
     });
+    batches.push({group,sync:batchRendering(group)});
   }
   function explode(owner,mass,point,velocity) {
     if(!(mass>0))return;
@@ -115,6 +120,7 @@ export function createDamageEffects(scene,station,[own,other]) {
     },
     advance(dt) {
       for(const item of debris) {item.mesh.position.addScaledVector(item.velocity,dt);item.mesh.rotateOnWorldAxis(item.spin.clone().normalize(),item.spin.length()*dt);}
+      for(const batch of batches)batch.sync();
       for(const item of explosions) {
         item.age+=dt;item.mesh.position.addScaledVector(item.velocity,dt);
         item.mesh.scale.setScalar(item.effect.radius(item.age));

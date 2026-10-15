@@ -7,6 +7,8 @@ let sim,scene,display,combatValues,socket,battle,snapshot;
 let mode='hangar',slot=0,room='',sequence=0,lastFrame=performance.now(),accumulator=0;
 let aim=[1,0,0],fire=false,pendingPower=-1,ready=false,latency=0,pingAt=0,lastSnapshotAt=0;
 let reconnectTimer,reconnectDelay=500,toastTimer,stability=0,trainingStage=0;
+let lastInstruments=0;
+const pixelBudgets={performance:960*540,balanced:1280*720,sharp:1920*1080};
 const sessionKey='approach-combat-session';
 const current=()=>{sim.read_frame(slot);return display.state;};
 const enabled=()=>mode==='training'||mode==='online'&&snapshot?.phase==='flight'&&battle.fighters[slot].health>0;
@@ -178,6 +180,7 @@ $('menu').onclick=()=>{
 };
 $('help').onclick=()=>{releaseMouse();$('controls-dialog').showModal();};$('close-controls').onclick=()=>$('controls-dialog').close();
 $('combat-camera').onclick=()=>{$('combat-camera').textContent=scene.toggleCombatCamera()?'Camera: stable':'Camera: follows ship';};
+$('graphics-quality').onchange=()=>{scene.setPixelBudget(pixelBudgets[$('graphics-quality').value]);};
 $('copy-invite').onclick=async()=>{
   const url=`${location.origin}/arena?room=${room}`;
   try{await navigator.clipboard.writeText(url);toast('Invite link copied.');}catch{toast(url);}
@@ -188,21 +191,25 @@ function frame(now){
   const commands=axes(),fresh=mode==='training'||mode==='online'&&now-lastSnapshotAt<1000;
   if(enabled()&&fresh&&!document.hidden){
     accumulator+=dt;
+    const deadline=performance.now()+8;
     while(accumulator>=1/120){
       sim.step_combat(...commands,mode==='training'&&(fire||held.has('Space'))?1:0,mode==='training'?pendingPower:-1,slot,mode==='training'?1:0,...aim);
       if(mode==='training')pendingPower=-1;accumulator-=1/120;
+      if(performance.now()>=deadline)break;
     }
   }
   sim.read_frame(slot);
   if(mode==='training')battle=readBattle(new Float64Array(sim.memory.buffer,sim.read_combat(),sim.combat_size()));
   if(battle)battle.fighters[slot].aim=aim;
-  if(mode!=='hangar')instruments(display.state,dt,now);
+  if(mode!=='hangar') {
+    if(now-lastInstruments>=100){instruments(display.state,Math.min(0.2,(now-lastInstruments)/1000),now);lastInstruments=now;}
+  }
   const thermal={altitude:display.thermal[0],heat:display.thermal[1],airspeed:display.thermal[2]};
   scene.render(display.state,mode==='hangar'?null:display.opponent,slot,mode!=='hangar',commands,now,display.station,thermal,battle);
   requestAnimationFrame(frame);
 }
 try{
-  scene=createScene(canvas);
+  scene=createScene(canvas,{pixelBudget:pixelBudgets.balanced});
   const response=await fetch('/physics.wasm');if(!response.ok)throw new Error('The flight simulation is missing.');
   const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{env:{acos:Math.acos,sin:Math.sin,cos:Math.cos,exp:Math.exp,log:Math.log}});
   sim=instance.exports;sim.reset_combat(0,0);

@@ -11,7 +11,8 @@ const {spacecraftModel,stationModel,solidMeshes,clipMeshCamera,meshHit,batchRend
 const effectsSource=(await readFile(new URL('../web/damage-effects.js',import.meta.url),'utf8'))
   .replace('/vendor/three.module.js',new URL('../node_modules/three/build/three.module.js',import.meta.url).href)
   .replace('./state.js',new URL('../web/state.js',import.meta.url).href)
-  .replace('./damage.js',new URL('../web/damage.js',import.meta.url).href);
+  .replace('./damage.js',new URL('../web/damage.js',import.meta.url).href)
+  .replace('./models.js','data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const {createDamageEffects}=await import('data:text/javascript;base64,'+Buffer.from(effectsSource).toString('base64'));
 
 test('accelerated rays preserve the nearest actual triangle after damage and reset',()=>{
@@ -59,6 +60,29 @@ test('camera clearance uses actual truss rails while leaving empty bays open',()
   assert.ok(rail.z>-12,'the camera stops before the physical rail');
 });
 
+test('localized station dents leave distant geometry untouched and reset exactly',()=>{
+  const station=stationModel(1,false),panel=station.fragments.find(p=>p.userData.panel===7);
+  const before=panel.geometry.attributes.position.array.slice(),version=panel.geometry.attributes.position.version;
+  const hit={point:new THREE.Vector3(-18,0,0),normal:new THREE.Vector3(0,0,1),crush:0.1};
+  station.deform([hit]);hit.crush=0.4;station.deform([hit]);
+  assert.equal(panel.geometry.attributes.position.version,version,'a distant panel needs no geometry upload');
+  assert.deepEqual(panel.geometry.attributes.position.array,before);
+  station.deform([]);assert.deepEqual(panel.geometry.attributes.position.array,before);
+});
+
+test('camera broad-phase skips distant meshes while preserving nearby clearance',()=>{
+  const station=stationModel(1,false);station.group.updateMatrixWorld(true);
+  station.group.userData.cameraBounds=new THREE.Box3().setFromObject(station.group).getBoundingSphere(new THREE.Sphere());
+  const all=solidMeshes(station.group);
+  const distant=new THREE.Line3(new THREE.Vector3(-28,0,53),new THREE.Vector3(-39,3,53));
+  assert.equal(solidMeshes(station.group,undefined,distant).length,0,'a distant station needs no per-part camera rays');
+  for(const [from,to] of [[[-18,0,5],[-18,0,-5]],[[-27.5,0,-11],[-27.5,0,-15]],[[-30,0.8,-11],[-30,0.8,-15]]]) {
+    const origin=new THREE.Vector3(...from),desired=new THREE.Vector3(...to),near=solidMeshes(station.group,undefined,new THREE.Line3(origin,desired));
+    assert.ok(near.length<all.length,'only nearby parts reach the exact triangle query');
+    assert.ok(clipMeshCamera(origin,desired,near).distanceTo(clipMeshCamera(origin,desired,all))<1e-8,'clearance still uses the same actual triangles');
+  }
+});
+
 test('solid queries exclude hidden parts, guidance and exhaust while including detached hardware',()=>{
   const ship=spacecraftModel(0x6daaa7),world=new THREE.Group();world.add(ship.group);
   ship.plumes[0].visible=true;
@@ -99,7 +123,7 @@ test('a fuel rupture tears frame sections and produces a short expanding flash i
   const effects=createDamageEffects(world,station,[own,other]),state=new Array(35).fill(0);
   Object.entries({6:1,15:2,19:-1,20:30,24:1,28:2000,29:80000,30:0.15,31:1,32:-1,33:80}).forEach(([i,v])=>state[i]=v);
   effects.update([state,null],new Array(15).fill(0),0);
-  const frames=world.children.filter(p=>p.name==='capsule-frame-fragment');
+  const frames=world.getObjectsByProperty('name','capsule-frame-fragment');
   assert.ok(frames.length>0,'the exposed front frame breaks into actual geometry');
   assert.ok(world.children.some(p=>p.name==='propellant-ejecta'&&p.isPoints),'luminous gas has an expanding cloud');
   effects.advance(0.05);
@@ -108,7 +132,7 @@ test('a fuel rupture tears frame sections and produces a short expanding flash i
   effects.advance(2);
   assert.ok(!glow.visible,'the gas cools rapidly instead of becoming a persistent fireball');
   effects.reset();
-  assert.equal(world.children.filter(p=>p.name.endsWith('-fragment')).length,0);
+  assert.equal(solidMeshes(world).filter(p=>p.name.endsWith('-fragment')).length,0);
   assert.ok(own.fragments.every(p=>p.visible));
 });
 
@@ -209,7 +233,7 @@ test('broken solar tiles tumble with different axes and periods',()=>{
   station.offset=new THREE.Vector3();station.velocity=new THREE.Vector3();
   const effects=createDamageEffects(world,station,[own,other]),state=new Array(54).fill(0);state[13]=1;
   effects.update([null,null],state,0);effects.advance(0.2);
-  const pieces=world.children.filter(p=>p.name==='station-panel-fragment');
+  const pieces=world.getObjectsByProperty('name','station-panel-fragment');
   assert.equal(pieces.length,24);
   const speeds=pieces.map(p=>2*Math.acos(Math.min(1,Math.abs(p.quaternion.w)))/0.2);
   assert.ok(Math.max(...speeds)-Math.min(...speeds)>0.1,'equal-sized panels have different periods');
@@ -245,4 +269,21 @@ test('an immediate weak second hit cannot suppress the first impact tears',()=>{
     results.push(own.fragments.flatMap((part,i)=>!part.visible?[i]:[]));
   }
   assert.ok(results[0].length>0);assert.deepEqual(results[0],results[1]);
+});
+
+
+test('detached solar tiles retain motion and solid surfaces with shared render submissions',()=>{
+  const world=new THREE.Scene(),station=stationModel(1,false),own=spacecraftModel(0),other=spacecraftModel(1);
+  station.velocity=new THREE.Vector3(2,0,0);
+  const effects=createDamageEffects(world,station,[own,other]),state=new Array(54).fill(0);state[13]=1;
+  effects.update([null,null],state,0);
+  const pieces=solidMeshes(world);
+  assert.equal(pieces.length,24,'all released physical tile surfaces remain available');
+  let draws=0,triangles=0;const camera=new THREE.PerspectiveCamera();
+  world.traverseVisible(part=>{if(part.isMesh&&part.layers.test(camera.layers)){draws++;triangles+=part.geometry.drawRange.count/3;}});
+  assert.ok(draws<=2,'tiles sharing material use one render submission');
+  assert.ok(triangles>0&&Number.isFinite(triangles),'the batch contains visible geometry');
+  const before=pieces.map(part=>part.position.clone());effects.advance(0.2);
+  assert.ok(pieces.every((part,i)=>part.position.distanceTo(before[i])>0),'each tile keeps its independent trajectory');
+  effects.reset();assert.equal(world.children.length,0,'reset removes geometry and render batches');
 });

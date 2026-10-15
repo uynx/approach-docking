@@ -200,6 +200,21 @@ test('a struck satellite recoils and its visible mesh follows shared physics',as
   placement.rendered.forEach((v,i)=>expect(v).toBeCloseTo(placement.physics[i],8));
 });
 
+test('queued crash ticks catch up to uninterrupted shared physics',async ({page})=>{
+  await controlledFlight(page);
+  await page.getByRole('button',{name:'Practice flight',exact:true}).click();
+  await page.evaluate(()=>window.physics.reset_flight(123));
+  const initial={0:8,1:4,2:8,5:50,6:1,7:0,8:0,9:0};
+  await pose(page,initial);
+  for(let i=0;i<5;i++)await pose(page,{},100);
+  const actual=await page.evaluate(()=>Array.from({length:40},(_,i)=>window.physics.component(i)));
+  const response=await page.request.get('/physics.wasm');
+  const {instance:{exports:sim}}=await WebAssembly.instantiate(await response.body(),{env:{acos:Math.acos,sin:Math.sin,cos:Math.cos,exp:Math.exp,log:Math.log}});
+  sim.reset_flight(123);for(const [i,v]of Object.entries(initial))sim.restore(Number(i),v);
+  for(let i=0;i<60;i++){sim.step_flight(0,0,0,0,0,0,0);sim.judge_flight(0);}
+  actual.forEach((v,i)=>expect(v).toBeCloseTo(sim.component(i),8));
+});
+
 test('watching the tutorial allows pause, crash examples and returning to flight',async ({page})=>{
   test.setTimeout(60000);
   await controlledFlight(page);
@@ -226,6 +241,10 @@ async function pose(page, values, advance=0) {
   return page.evaluate(({values,advance})=>{
     for(const [index,value] of Object.entries(values)) window.physics.restore(Number(index),value);
     window.views=[];window.frameTime+=advance;window.flightFrame(window.frameTime);
+    for(let i=0;i<120;i++) {
+      const elapsed=window.physics.component(14);window.views=[];window.flightFrame(window.frameTime);
+      if(window.physics.component(14)===elapsed)break;
+    }
     return window.views;
   },{values,advance});
 }
@@ -301,7 +320,7 @@ test('a high-speed solar-panel strike breaks the actual panel into visible fragm
   expect(await page.evaluate(()=>window.physics.station_component(13))).toBeGreaterThan(0);
   expect(Number(await page.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThanOrEqual(24);
   const actual=await page.evaluate(()=>({hidden:window.stationObject.children.filter(p=>p.name==='station-panel'&&!p.visible).length,
-    detached:window.stationObject.parent.children.filter(p=>p.name==='station-panel-fragment').length}));
+    detached:window.stationObject.parent.getObjectsByProperty('name','station-panel-fragment').length}));
   expect(actual.hidden).toBeGreaterThanOrEqual(24);expect(actual.detached).toBe(actual.hidden);
   expect(await page.evaluate(()=>window.physics.component(5))).toBeGreaterThan(40);
   expect(errors).toEqual([]);
@@ -322,7 +341,7 @@ test('ruptured capsule and station tanks each produce a fuel explosion',async ({
   await pose(page,{},30);
   expect(await page.evaluate(()=>window.physics.component(13))).toBe(0);
   await expect(page.locator('#viewport')).toHaveAttribute('data-explosions','2');
-  const tankPieces=await page.evaluate(()=>window.stationObject.parent.children.filter(p=>p.name.includes('tank-fragment')).length);
+  const tankPieces=await page.evaluate(()=>window.stationObject.parent.getObjectsByProperty('isMesh',true).filter(p=>p.name.includes('tank-fragment')).length);
   expect(tankPieces).toBeGreaterThan(0);
 });
 
@@ -431,6 +450,13 @@ test('flight menus expose crash scenes and omit atmospheric entry practice',asyn
   await expect(page.getByRole('button',{name:'Entry',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Crash lab',exact:true}).click();
   await expect(page.locator('#tutorial-title')).toHaveText('Side impact · 3 m/s');
+  await page.setViewportSize({width:1600,height:900});
+  await page.getByLabel('Graphics quality').selectOption('performance');
+  expect(await page.locator('#viewport').evaluate(canvas=>canvas.width*canvas.height)).toBeLessThanOrEqual(960*540);
+  await page.getByLabel('Graphics quality').selectOption('sharp');
+  expect(await page.locator('#viewport').evaluate(canvas=>canvas.width*canvas.height)).toBe(1600*900);
+  await page.getByLabel('Graphics quality').selectOption('balanced');
+  expect(await page.locator('#viewport').evaluate(canvas=>canvas.width*canvas.height)).toBeLessThanOrEqual(1280*720);
   await page.getByLabel('Choose a scene').selectOption({label:'Side impact · 30 m/s'});
   for(let i=0;i<20;i++)await pose(page,{},100);
   expect(await page.evaluate(()=>window.physics.component(31))).toBeGreaterThan(0);
@@ -458,9 +484,9 @@ test('reset restores station fragments after an opponent-only crash',async ({pag
     Object.assign(remote,{[Flight.status]:2,[Flight.normalZ]:-1,[Flight.impactSpeed]:30,[Flight.impactAge]:1,[Flight.impactSequence]:1,[Flight.impactMass]:2100,[Flight.impactPart]:-1});
     structure[Station.brokenPanels]=1;
     effects.update([local,remote],structure,0.1);
-    const before=world.children.filter(p=>p.name.endsWith('-fragment')).length;
+    const before=world.getObjectsByProperty('isMesh',true).filter(p=>p.name.endsWith('-fragment')).length;
     effects.reset();
-    return {before,after:effects.advance(0).fragments,meshes:world.children.filter(p=>p.name.endsWith('-fragment')).length,
+    return {before,after:effects.advance(0).fragments,meshes:world.getObjectsByProperty('isMesh',true).filter(p=>p.name.endsWith('-fragment')).length,
       hidden:[...station.fragments,...other.fragments,...other.pressurePanels].filter(p=>!p.visible).length};
   });
   expect(result.before).toBeGreaterThan(24);

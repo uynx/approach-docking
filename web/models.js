@@ -15,11 +15,25 @@ function mesh(parent, geometry, material, pos = [0, 0, 0]) {
   object.userData.solid=!material.isShaderMaterial;
   object.position.set(...pos); parent.add(object); return object;
 }
-export function solidMeshes(root,exclude) {
+const cameraBoundsVersions=new WeakMap();
+export function solidMeshes(root,exclude,segment) {
   const result=[];
+  const sphere=new THREE.Sphere(),nearest=new THREE.Vector3();
+  function nearby(bound,matrix,padding=0.3) {
+    sphere.copy(bound).applyMatrix4(matrix);segment.closestPointToPoint(sphere.center,true,nearest);
+    return nearest.distanceToSquared(sphere.center)<=(sphere.radius+padding)**2;
+  }
   function collect(object) {
     if(!object.visible||object===exclude)return;
-    if(object.isMesh&&object.userData.solid)result.push(object);
+    if(segment&&object.userData.cameraBounds&&!nearby(object.userData.cameraBounds,object.matrixWorld,2))return;
+    if(object.isMesh&&object.userData.solid) {
+      if(segment) {
+        const geometry=object.geometry,version=geometry.attributes.position.version;
+        if(cameraBoundsVersions.get(geometry)!==version){geometry.computeBoundingSphere();cameraBoundsVersions.set(geometry,version);}
+        if(!nearby(object.geometry.boundingSphere,object.matrixWorld))return;
+      }
+      result.push(object);
+    }
     for(const child of object.children)collect(child);
   }
   collect(root);return result;
@@ -290,25 +304,39 @@ export function stationModel(anisotropy = 1, textures = true) {
     const light=new THREE.Mesh(new THREE.SphereGeometry(0.065,8,6),new THREE.MeshBasicMaterial({color:0x78c7ff}));
     light.position.set(port+Math.cos(angle)*1.04,Math.sin(angle)*1.04,-0.09);light.userData.port=port;light.userData.index=i;collarLights.add(light);
   }
-  const rest=group.children.map(object=>({object,positions:object.geometry.attributes.position.array.slice()}));
+  const rest=group.children.map(object=>({object,positions:object.geometry.attributes.position.array.slice(),weights:new WeakMap(),deformed:false}));
   group.add(collarLights);
   let previous='';
   function deform(impacts) {
     const key=impacts.map(hit=>hit.crush.toFixed(6)).join(':');
     if(key===previous)return; previous=key;
-    for(const {object,positions} of rest) {
+    for(const entry of rest) {
+      const {object,positions}=entry;
+      if(!object.visible)continue;
       const output=object.geometry.attributes.position;
-      for(let i=0;i<positions.length;i+=3) {
-        let x=positions[i],y=positions[i+1],z=positions[i+2];
-        for(const hit of impacts) {
-          const dx=positions[i]-hit.point.x,dy=positions[i+1]-hit.point.y,dz=positions[i+2]-hit.point.z;
-          const depth=dx*hit.normal.x+dy*hit.normal.y+dz*hit.normal.z;
-          const radial=dx*dx+dy*dy+dz*dz-depth*depth;
-          const amount=hit.crush*Math.exp(-(Math.max(0,Math.sqrt(Math.max(0,radial))-1.5)**2)/0.5-Math.abs(depth)/1.2);
-          x-=hit.normal.x*amount;y-=hit.normal.y*amount;z-=hit.normal.z*amount;
+      const fields=impacts.filter(hit=>hit.crush>0).map(hit=>{
+        let weights=entry.weights.get(hit);
+        if(!weights) {
+          weights=[];
+          for(let i=0;i<positions.length;i+=3) {
+            const dx=positions[i]-hit.point.x,dy=positions[i+1]-hit.point.y,dz=positions[i+2]-hit.point.z;
+            const depth=dx*hit.normal.x+dy*hit.normal.y+dz*hit.normal.z;
+            const radial=dx*dx+dy*dy+dz*dz-depth*depth;
+            const weight=Math.exp(-(Math.max(0,Math.sqrt(Math.max(0,radial))-1.5)**2)/0.5-Math.abs(depth)/1.2);
+            if(weight>1e-10)weights.push(i,weight);
+          }
+          entry.weights.set(hit,weights);
         }
-        output.setXYZ(i/3,x,y,z);
+        return {hit,weights};
+      });
+      const affected=fields.some(field=>field.weights.length);
+      if(!affected&&!entry.deformed)continue;
+      output.array.set(positions);
+      for(const {hit,weights} of fields)for(let j=0;j<weights.length;j+=2) {
+        const i=weights[j],amount=hit.crush*weights[j+1];
+        output.array[i]-=hit.normal.x*amount;output.array[i+1]-=hit.normal.y*amount;output.array[i+2]-=hit.normal.z*amount;
       }
+      entry.deformed=affected;
       output.needsUpdate=true;object.geometry.computeVertexNormals();object.geometry.computeBoundingSphere();
     }
   }
