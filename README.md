@@ -205,7 +205,7 @@ Sources: [NIST hydrazine](https://webbook.nist.gov/cgi/cbook.cgi?ID=C302012&Mask
 [NIST nitrogen tetroxide](https://webbook.nist.gov/cgi/cbook.cgi?ID=C10544726&Mask=2),
 [NIST water vapor](https://webbook.nist.gov/cgi/cbook.cgi?ID=C7732185&Mask=1).
 
-## Earth and atmospheric entry
+## Earth and orbit
 
 Earth has its actual radius of 6,371 km and a nominal 400 km reference orbit.
 The orbital period follows Earth's gravitational parameter, approximately
@@ -216,19 +216,8 @@ Earth renders in a separate kilometer-scale pass to preserve nearby depth precis
 The old 2 km flight boundary is removed. Ocean highlights, an illuminated
 atmosphere limb, the Moon, solar glare and distant satellites add scene depth.
 
-Atmospheric entry practice starts at 90 km with a descending trajectory and the
-heat shield forward. The physics applies central gravity and aerodynamic drag
-relative to a co-rotating atmosphere. Density is log-interpolated from the
-[US Standard Atmosphere 1976 tables](https://www.pdas.com/bigtables.html), with an
-exponential continuation above 400 km. Assumed drag coefficient is 1.5 and reference
-area is a circle of radius 1.35 m. Ground contact ends the attempt at Earth's surface.
-
-D = ½ρCᴅAv². Drag equals half the density times drag coefficient, area and airspeed
-squared, opposing air-relative velocity. q = 0.000174153 √(ρ/R) v³. Stagnation heat
-flux equals the Sutton–Graves coefficient times the square root of density divided
-by nose radius, times airspeed cubed. Heating drives the visible plasma envelope;
-it is not a fuel fire. The HUD reports altitude, airspeed and heat flux.
-[Sutton–Graves coefficient source](https://ntrs.nasa.gov/api/citations/20060004824/downloads/20060004824.pdf).
+The shared flight engine retains central gravity, atmospheric drag and ground
+contact, but atmospheric entry is no longer a selectable practice mode.
 
 ## Imagery credits
 

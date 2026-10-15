@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 let sim, scene, socket, snapshot, slot = 0, practice = false, active = false;
 let sequence = 0, room = '', lastFrame = performance.now(), accumulator = 0, toastTimer;
 let reconnectTimer, reconnectDelay = 500, latency = 0, pingAt = 0, lastSnapshotAt = 0;
-let debriefKey = '', entryPractice = false;
+let debriefKey = '';
 let awardStarted=0,awardScore=0;
 let demo;
 let display;
@@ -129,15 +129,11 @@ function connect() {
     reconnectTimer = setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 8000);
   });
 }
-function startPractice(entry = entryPractice) {
+function startPractice() {
   demo=undefined;$('tutorial').hidden=true;
   if(active&&!practice){if(socket?.readyState===WebSocket.OPEN)send({type:'leave'});sessionStorage.removeItem('approach-session');room='';}
-  entryPractice=entry;
   practice = true; slot = 0; snapshot = undefined; debriefKey = ''; held.clear(); sim.reset_flight(crypto.getRandomValues(new Uint32Array(1))[0]||1); accumulator = 0;
-  if(entry) {
-    sim.restore(Flight.y,-310000);sim.restore(Flight.vy,-300);sim.restore(Flight.vz,-600);sim.restore(Flight.qw,0);sim.restore(Flight.qx,1);sim.restore(Flight.qy,0);sim.restore(Flight.qz,0);
-  }
-  $('results').hidden = true;$('score-award').hidden=true; $('mode').textContent = entry?'ATMOSPHERIC ENTRY':'PRACTICE'; $('room-code').textContent = 'LOCAL';
+  $('results').hidden = true;$('score-award').hidden=true; $('mode').textContent = 'PRACTICE'; $('room-code').textContent = 'LOCAL';
   $('opponent-name').textContent = 'Solo practice'; $('opponent-range').textContent = '—';
   $('opponent-status').textContent = 'Solo practice';
   $('announcement').textContent = ''; showFlight();
@@ -176,7 +172,7 @@ function toggleCamera() {
 }
 $('create').onclick = () => send({ type: 'create', name: $('callsign').value.trim() });
 $('join').onclick = () => send({ type: 'join', room: $('join-code').value.trim().toUpperCase(), name: $('callsign').value.trim() });
-$('practice').onclick = () => startPractice(false); $('entry').onclick = () => startPractice(true); $('reset-practice').onclick = () => startPractice();
+$('practice').onclick = () => startPractice(); $('reset-practice').onclick = () => startPractice();
 $('ready').onclick = ready; $('rematch').onclick = () => practice ? startPractice() : ready();
 $('close-results').onclick = () => { $('results').hidden = true; };
 $('leave').onclick = () => { if (!practice) send({ type: 'leave' }); sessionStorage.removeItem('approach-session'); location.href = '/'; };
@@ -326,7 +322,7 @@ try {
   const saved=sessionStorage.getItem('approach-session');
   connect();
   await scene.ready;
-  $('practice').disabled = false; $('entry').disabled = false;$('crash-lab').disabled=false;
+  $('practice').disabled = false;$('crash-lab').disabled=false;
   if(!active&&new URLSearchParams(location.search).has('lab'))startLesson(4);
   else if(!active&&!$('join-code').value&&!saved)startPractice(false);
   else if($('join-code').value){$('welcome').hidden=false;$('multiplayer').setAttribute('aria-expanded','true');}

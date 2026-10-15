@@ -426,16 +426,19 @@ test('reset clears wreckage even after the crashed capsule reaches the ground',a
   expect(await page.evaluate(()=>window.capsuleObject.children.filter(p=>p.name==='capsule-hull'&&!p.visible).length)).toBe(0);
 });
 
-test('entry practice falls toward Earth and displays heating plasma only in the atmosphere',async ({page})=>{
+test('flight menus expose crash scenes and omit atmospheric entry practice',async ({page})=>{
   await controlledFlight(page);
-  await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','false');
-  await pose(page,{1:-310000,4:-300,5:-600,6:0,7:1});
-  const before=await page.evaluate(()=>window.physics.flight_altitude());
-  for(let i=0;i<10;i++)await pose(page,{},100);
-  expect(await page.evaluate(()=>window.physics.flight_altitude())).toBeLessThan(before);
-  await expect(page.locator('#viewport')).toHaveAttribute('data-plasma','true');
-  await expect(page.locator('#entry-telemetry')).toBeVisible();
-  expect(await page.evaluate(()=>window.physics.component(15))).toBe(0);
+  await expect(page.getByRole('button',{name:'Entry',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Crash lab',exact:true}).click();
+  await expect(page.locator('#tutorial-title')).toHaveText('Side impact · 3 m/s');
+  await page.getByLabel('Choose a scene').selectOption({label:'Side impact · 30 m/s'});
+  for(let i=0;i<20;i++)await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.component(31))).toBeGreaterThan(0);
+  await expect(page.locator('#viewport')).toHaveAttribute('data-damage','crushing');
+  await page.getByLabel('Choose a scene').selectOption({label:'Two spacecraft head on'});
+  for(let i=0;i<20;i++)await pose(page,{},100);
+  expect(await page.evaluate(()=>window.physics.component(31))).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.physics.opponent_component(31))).toBeGreaterThan(0);
 });
 
 test('reset restores station fragments after an opponent-only crash',async ({page})=>{
