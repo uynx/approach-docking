@@ -39,9 +39,13 @@ void Game::broadcast(const std::string& code,const Room& room) {
         {"spin",flight::relative_spin(p.state)}});
     json::array station;
     flight::visit_station(room.station,[&](int, auto value) { station.push_back(value); });
-    const json::object message{{"type","state"},{"room",code},{"phase",room.phase},
+    json::object message{{"type","state"},{"room",code},{"phase",room.phase},
         {"tick",tick_},{"countdown",room.start>tick_ ? (room.start-tick_)/120.0 : 0},
         {"pilots",pilots},{"station",station}};
+    message["mode"]=room.combat?"combat":"docking";
+    if(room.combat)message["combat"]=json::object{{"map",room.battle.map?"scrapyard":"shipyard"},
+        {"health",json::array{room.battle.fighters[0].health,room.battle.fighters[1].health}},
+        {"round",room.battle.number},{"wins",json::array{room.battle.wins[0],room.battle.wins[1]}}};
     for(const auto& p:room.pilots) if(p.peer>=0) send_(p.peer,message);
 }
 void Game::receive(int peer,const std::string& text) {
@@ -61,6 +65,9 @@ void Game::receive(int peer,const std::string& text) {
             if(rooms_.size()>=32) { error(peer,"All rooms are occupied. Try again later."); return; }
             do {code=random_text(6,"ABCDEFGHJKLMNPQRSTUVWXYZ23456789");} while(rooms_.count(code));
             rooms_.emplace(code,Room{});
+            auto& created=rooms_.at(code);
+            created.combat=string_field(obj,"mode")=="combat";
+            created.battle.map=string_field(obj,"map")=="scrapyard"?1:0;
         }
         auto it=rooms_.find(code);
         if(it==rooms_.end()) { error(peer,"Room expired or not found."); return; }
@@ -107,6 +114,10 @@ void Game::receive(int peer,const std::string& text) {
         if(room.phase!="lobby") { error(peer,"The round has already started."); return; }
         p->ready=true;
         if(room.pilots[0].ready && room.pilots[1].ready && room.pilots[0].peer>=0 && room.pilots[1].peer>=0) {
+            if(room.combat) {
+                flight::State states[2];combat::reset(room.battle,states,room.station);
+                for(int i=0;i<2;i++)room.pilots[i].state=states[i];
+            }
             room.phase="countdown"; room.start=tick_+360;
         }
         broadcast(joined->second,room);

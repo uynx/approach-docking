@@ -1,5 +1,6 @@
 #pragma once
 #include "physics.hpp"
+#include "combat.hpp"
 #include <boost/json.hpp>
 #include <array>
 #include <functional>
@@ -26,6 +27,8 @@ private:
     struct Room {
         std::array<Pilot,2> pilots;
         flight::Station station;
+        bool combat=false;
+        combat::Round battle;
         std::string phase="lobby";
         unsigned long start=0, touched=0;
     };
