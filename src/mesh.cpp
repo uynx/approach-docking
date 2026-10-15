@@ -222,14 +222,22 @@ bool triangle_contact(const TriangleMotion& a,const TriangleMotion& b,double lim
     }
     return false;
 }
+Motion projected(Motion body,const Vec* frame) {
+    // Keep the query frame fixed across the sweep so vertex paths stay linear.
+    auto project=[&](Vec v){return Vec{dot(v,frame[0]),dot(v,frame[1]),dot(v,frame[2])};};
+    body.body.position=project(body.body.position);body.translation=project(body.translation);
+    for(int i=0;i<3;i++){body.start[i]=project(body.start[i]);body.end[i]=project(body.end[i]);}
+    return body;
+}
 Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
     Contact result;
     const int models=sizeof(roots)/sizeof(roots[0]);
     if(bodyA.model<0||bodyA.model>=models||bodyB.model<0||bodyB.model>=models||!(dt>0))return result;
     const auto a=motion(bodyA,dt),b=motion(bodyB,dt);
     if(!overlaps(swept_bounds(a,nodes[roots[bodyA.model]],1),swept_bounds(b,nodes[roots[bodyB.model]],1)))return result;
+    const auto localA=projected(a,a.end),localB=projected(b,a.end);
     struct CachedBounds {int node=-1;double limit=0;Bounds box;};
-    CachedBounds boundsA[256],boundsB[256];
+    CachedBounds boundsA[256],boundsB[256],localBoundsA[256],localBoundsB[256];
     auto box=[&](const Motion& body,CachedBounds* cache,int node,double limit) {
         auto& entry=cache[node%256];
         if(entry.node!=node||entry.limit!=limit){entry.node=node;entry.limit=limit;entry.box=swept_bounds(body,nodes[node],limit);}
@@ -251,6 +259,7 @@ Contact sweep(const Body& bodyA,const Body& bodyB,double dt) {
         if(!active(a,na)||!active(b,nb))continue;
         const double limit=clamp(result.fraction+0.00001,0,1);
         const auto ba=box(a,boundsA,pair.a,limit),bb=box(b,boundsB,pair.b,limit);if(!overlaps(ba,bb))continue;
+        if(!overlaps(box(localA,localBoundsA,pair.a,limit),box(localB,localBoundsB,pair.b,limit)))continue;
         if(na.count&&nb.count) {
             const auto& la=leaf(a,leavesA,pair.a);const auto& lb=leaf(b,leavesB,pair.b);
             for(int i=0;i<la.count;i++)for(int j=0;j<lb.count;j++) {

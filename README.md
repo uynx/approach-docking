@@ -86,6 +86,17 @@ damage and collision queries; render copies add no colliders. Changed vertices
 upload only when geometry changes, and detached parts leave holes in the batches.
 Camera and nose rays use refitted triangle trees. Shared collision sweeps cache
 triangle motion, use spatial splits and skip removed hardware.
+Station collision leaves hold at most four triangles. Other models retain
+up to eight triangles per leaf. Swept node bounds must overlap in world coordinates and
+in a fixed frame aligned with the capsule before triangle pairs are considered.
+This rejects empty space left by coarse bounds and reduces false overlap while
+ships tumble. The exact swept triangle contact and impulse calculations remain
+the final decision. WASM reserves a 512 KiB stack for both bound caches.
+
+Static station meshes are grouped by their centres in a grid with 8 m cells,
+inside their material batches. A local dent updates its nearby groups. The sampled collar dent uploads
+30.4% of station position data instead of 88.2%, with seven station material
+batches in both cases. The collision export retains all 103,312 triangles.
 
 The graphics selector works in combat, docking and the crash lab. Balanced caps
 the drawing buffer at 1280 × 720 pixels, smoothest at 960 × 540, and sharpest at
@@ -112,6 +123,7 @@ hardware FPS. `REALTIME=1` samples actual animation frame intervals in a fresh p
 `GPU_BACKEND=hardware` requests OpenGL; check the reported backend for fallback.
 `PROBE=no-shadows` or `PROBE=no-render` isolates rendering costs.
 `ARENA=1` profiles combat training; `WIDTH` and `HEIGHT` set the viewport.
+`QUALITY=performance`, `balanced` or `sharp` selects the graphics preset.
 `PHYSICS_BUDGET_MS` optionally fails if a scenario's 95th-percentile tick exceeds
 the supplied budget. Dense wing strikes can still exceed the 8.33 ms physics interval.
 
@@ -121,6 +133,14 @@ wing-strike tick fell from 28.3 ms to 10.7 ms. These are local samples, not FPS 
 An accelerated Asahi AGX sample at 1280 × 720 averaged approximately 43 FPS on
 approach and 36 FPS through a wing strike. The strike's worst frame callback
 was 192 ms, so severe impact hitches remain measurable.
+
+The October 15 algorithm comparison uses five interleaved runs of each crash
+scenario against the previous WASM build. Median peak physics ticks fell from
+11.7 to 2.8 ms for the wing strike and 20.0 to 5.3 ms for tumbling contact.
+A separate Asahi AGX browser sample on Smoothest at 960 × 540 reduced wing-strike
+callback cost at the 95th percentile from 42.7 to 12.8 ms, with a maximum of
+70.2 ms before and 38.1 ms after. These local timings do not guarantee a frame
+rate on other devices, and occasional impact stalls remain possible.
 
 ## Deploy on Render
 

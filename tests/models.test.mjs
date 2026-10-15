@@ -70,6 +70,17 @@ test('localized station dents leave distant geometry untouched and reset exactly
   station.deform([]);assert.deepEqual(panel.geometry.attributes.position.array,before);
 });
 
+test('a local station dent uploads only a fraction of the station vertices',()=>{
+  const station=stationModel(1,false),sync=batchRendering(station.group);
+  const batches=station.group.children.filter(part=>part.name==='render-batch');
+  for(const part of batches)part.geometry.attributes.position.clearUpdateRanges();
+  station.deform([{point:new THREE.Vector3(-18,0,0),normal:new THREE.Vector3(0,0,1),crush:0.4}]);sync();
+  const uploaded=batches.reduce((sum,part)=>sum+part.geometry.attributes.position.updateRanges.reduce((n,range)=>n+range.count,0),0);
+  const total=batches.reduce((sum,part)=>sum+part.geometry.attributes.position.array.length,0);
+  assert.ok(uploaded>0,'the local dent reaches the rendered geometry');
+  assert.ok(uploaded<total/2,'a local impact does not upload most of the station');
+});
+
 test('camera broad-phase skips distant meshes while preserving nearby clearance',()=>{
   const station=stationModel(1,false);station.group.updateMatrixWorld(true);
   station.group.userData.cameraBounds=new THREE.Box3().setFromObject(station.group).getBoundingSphere(new THREE.Sphere());

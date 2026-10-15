@@ -19,6 +19,7 @@ try {
   });
   await page.goto(pageUrl);
   await page.getByRole('button',{name:practiceButton,exact:true}).click({timeout:30000});
+  if(process.env.QUALITY)await page.getByLabel('Graphics quality').selectOption(process.env.QUALITY);
   const results=await page.evaluate(async ({probe,arena})=>{
     const THREE=await import('/vendor/three.module.js');
     const tally={renderMs:0,calls:0,triangles:0};
@@ -69,6 +70,7 @@ try {
     });
     await realtime.goto(pageUrl);
     await realtime.getByRole('button',{name:practiceButton,exact:true}).click({timeout:30000});
+    if(process.env.QUALITY)await realtime.getByLabel('Graphics quality').selectOption(process.env.QUALITY);
     results.realtime=await realtime.evaluate(async ({arena,probe})=>{
     if(probe==='no-shadows'||probe==='no-render') {
       const THREE=await import('/vendor/three.module.js');

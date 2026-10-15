@@ -187,11 +187,15 @@ function batch(group) {
     if (!object.isMesh) return;
     const geometry = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone();
     geometry.applyMatrix4(object.matrixWorld);
-    if (!parts.has(object.material)) parts.set(object.material, []);
-    parts.get(object.material).push(geometry);
+    geometry.computeBoundingBox();
+    const center=geometry.boundingBox.getCenter(new THREE.Vector3()),cell=center.toArray().map(v=>Math.floor(v/8)).join(',');
+    if (!parts.has(object.material)) parts.set(object.material, new Map());
+    const cells=parts.get(object.material);
+    if(!cells.has(cell))cells.set(cell,[]);
+    cells.get(cell).push(geometry);
   });
   group.clear();
-  for (const [material, geometries] of parts) {
+  for (const [material, cells] of parts) for(const geometries of cells.values()) {
     const geometry = new THREE.BufferGeometry();
     for (const name of ['position', 'normal', 'uv']) {
       const count = geometries.reduce((n, g) => n + g.attributes[name].array.length, 0);

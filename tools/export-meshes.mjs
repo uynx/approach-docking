@@ -30,12 +30,13 @@ for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7),satelliteMod
     parts.push([object.userData.panel??-1,object.userData.tank??-1,object.name==='capsule-frame'?2:object.name==='capsule-hull'?1:0,object.userData.mass||2,fragment,[center.x,center.y,-center.z],geometry.boundingSphere.radius]);
     geometry.dispose();
   });
+  const leafSize=roots.length===0?4:8;
   function build(faces) {
     const id=nodes.length,low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity];
     for(const face of faces)for(let j=0;j<3;j++){low[j]=Math.min(low[j],face.low[j]);high[j]=Math.max(high[j],face.high[j]);}
     const node={low,high,left:-1,right:-1,start:triangles.length,count:faces.length,panels:0,tanks:0,permanent:false};nodes.push(node);
     for(const face of faces){const [panel,tank]=parts[face.part];if(panel>=0)node.panels|=1<<panel;if(tank>=0)node.tanks|=1<<tank;if(panel<0&&tank<0)node.permanent=true;}
-    if(faces.length<=8){triangles.push(...faces);return id;}
+    if(faces.length<=leafSize){triangles.push(...faces);return id;}
     const empty=()=>({low:[Infinity,Infinity,Infinity],high:[-Infinity,-Infinity,-Infinity],count:0});
     const merge=(box,other)=>{for(let j=0;j<3;j++){box.low[j]=Math.min(box.low[j],other.low[j]);box.high[j]=Math.max(box.high[j],other.high[j]);}box.count+=other.count;return box;};
     const area=box=>{if(!box.count)return 0;const d=box.high.map((v,j)=>v-box.low[j]);return d[0]*d[1]+d[1]*d[2]+d[2]*d[0];};
