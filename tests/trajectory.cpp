@@ -29,6 +29,7 @@ int main(int argc,char** argv) {
             static_cast<double>(s.status),s.score,s.impact_normal.x,s.impact_normal.y,s.impact_normal.z,
             s.impact_speed,s.impact_point.x,s.impact_point.y,s.impact_point.z,s.impact_age,s.impact_arm.x,s.impact_arm.y,s.impact_arm.z,
             s.impact_mass,s.crush_force,s.station_share,s.impact_sequence,s.impact_part,s.burned_fuel,s.station_burned_fuel,static_cast<double>(s.impact_body)})std::cout<<value<<'\n';
+        for(unsigned word:s.missing)std::cout<<word<<'\n';
         flight::visit_station(station,[](int,double value){std::cout<<value<<'\n';});
         return 0;
     }

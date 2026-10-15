@@ -17,7 +17,6 @@ for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7),satelliteMod
       indices.push(unique.get(key));
     }
     const count=geometry.index?.count||position.count;
-    const faceStart=faces.length;
     for(let i=0;i<count;i+=3) {
       const points=[0,2,1].map(j=>indices[geometry.index?geometry.index.getX(i+j):i+j]);
       const [a,b,c]=points.map(i=>vertices[i]);
@@ -25,7 +24,10 @@ for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7),satelliteMod
       const cross=[ab[1]*ac[2]-ab[2]*ac[1],ab[2]*ac[0]-ab[0]*ac[2],ab[0]*ac[1]-ab[1]*ac[0]];
       if(Math.hypot(...cross)>1e-12)faces.push({points,part,center:a.map((v,j)=>(v+b[j]+c[j])/3),low:a.map((v,j)=>Math.min(v,b[j],c[j])),high:a.map((v,j)=>Math.max(v,b[j],c[j]))});
     }
-    parts.push([object.userData.panel??-1,object.userData.tank??-1,object.name==='capsule-frame'?2:object.name==='capsule-hull'?1:0,object.userData.mass||2,faceStart,faces.length-faceStart]);
+    const fragment=roots.length===1?model.fragments.indexOf(object):-1;
+    if(fragment>=128)throw new Error('Capsule fragments exceed the shared damage mask');
+    geometry.computeBoundingSphere();const center=geometry.boundingSphere.center;
+    parts.push([object.userData.panel??-1,object.userData.tank??-1,object.name==='capsule-frame'?2:object.name==='capsule-hull'?1:0,object.userData.mass||2,fragment,[center.x,center.y,-center.z],geometry.boundingSphere.radius]);
     geometry.dispose();
   });
   function build(faces) {
@@ -65,6 +67,6 @@ for(const model of [stationModel(1,false),spacecraftModel(0x6daaa7),satelliteMod
 }
 const scalar=value=>`${Object.is(value,-0)?0:value}`;
 const vec=point=>'{'+point.map(scalar).join(',')+'}';
-const output=`#pragma once\nnamespace collision {\nstatic const flight::Vec vertices[]={${vertices.map(vec).join(',')}};\nstatic const Triangle triangles[]={${triangles.map(f=>'{'+[...f.points,f.part].join(',')+'}').join(',')}};\nstatic const Part parts[]={${parts.map(p=>'{'+p.slice(0,4).join(',')+'}').join(',')}};\nstatic const Node nodes[]={${nodes.map(n=>'{'+[vec(n.low),vec(n.high),n.left,n.right,n.start,n.count,n.panels,n.tanks,n.permanent].join(',')+'}').join(',')}};\nstatic const int roots[]={${roots.join(',')}};\n}\n`;
+const output=`#pragma once\nnamespace collision {\nstatic const flight::Vec vertices[]={${vertices.map(vec).join(',')}};\nstatic const Triangle triangles[]={${triangles.map(f=>'{'+[...f.points,f.part].join(',')+'}').join(',')}};\nstatic const Part parts[]={${parts.map(p=>'{'+[...p.slice(0,5),vec(p[5]),p[6]].join(',')+'}').join(',')}};\nstatic const Node nodes[]={${nodes.map(n=>'{'+[vec(n.low),vec(n.high),n.left,n.right,n.start,n.count,n.panels,n.tanks,n.permanent].join(',')+'}').join(',')}};\nstatic const int roots[]={${roots.join(',')}};\n}\n`;
 await writeFile(process.argv[2],output);
 process.stdout.write(`Exported ${vertices.length} mesh vertices, ${triangles.length} triangles and ${parts.length} solid parts\n`);

@@ -2,7 +2,7 @@
 #include "physics.hpp"
 
 namespace flight {
-constexpr int state_size = 36, station_size = 54;
+constexpr int state_size = 40, station_size = 54;
 
 template<class T, class Visitor>
 void visit_state(T& s, Visitor visit) {
@@ -42,6 +42,7 @@ void visit_state(T& s, Visitor visit) {
     visit(33, s.burned_fuel);
     visit(34, s.station_burned_fuel);
     visit(35, s.impact_body);
+    for(int i=0;i<4;i++)visit(36+i,s.missing[i]);
 }
 
 template<class T, class Visitor>

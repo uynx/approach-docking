@@ -16,6 +16,7 @@ struct State {
     double impact_speed = 0, impact_age = 0;
     double impact_sequence = 0, impact_part = -1, burned_fuel = 0, station_burned_fuel = 0;
     int impact_body = 0;
+    unsigned missing[4]={};
 };
 struct Satellite {Vec position,velocity,omega;Quat attitude;};
 Satellite initial_satellite(int);

@@ -1,7 +1,7 @@
 #include "mesh.hpp"
 namespace collision {
 struct Triangle {int a,b,c,part;};
-struct Part {int panel,tank,kind;double mass;};
+struct Part {int panel,tank,kind;double mass;int fragment;flight::Vec center;double radius;};
 struct Node {flight::Vec low,high;int left,right,start,count,panels,tanks;bool permanent;};
 }
 #include "mesh-data.hpp"
@@ -23,7 +23,17 @@ bool bounds(const Node& node,Vec origin,Vec direction,double limit) {
     }
     return true;
 }
-Hit ray(int model,Vec origin,Vec direction,double limit,int broken,int ruptured) {
+bool removed(const Part& part,const unsigned* missing){return missing&&part.fragment>=0&&(missing[part.fragment/32]&(1u<<(part.fragment%32)));}
+Vec closest(Vec,Vec,Vec,Vec);
+void fracture(Vec point,double radius,unsigned* missing) {
+    for(const auto& triangle:triangles) {
+        const auto& part=parts[triangle.part];
+        if(part.fragment<0||removed(part,missing)||flight::length(sub(part.center,point))>radius+part.radius)continue;
+        if(flight::length(sub(closest(point,vertices[triangle.a],vertices[triangle.b],vertices[triangle.c]),point))<radius)
+            missing[part.fragment/32]|=1u<<(part.fragment%32);
+    }
+}
+Hit ray(int model,Vec origin,Vec direction,double limit,int broken,int ruptured,const unsigned* missing) {
     Hit hit;hit.distance=limit;
     if(model<0||model>=static_cast<int>(sizeof(roots)/sizeof(roots[0]))||limit<0)return hit;
     int stack[64],count=1;stack[0]=roots[model];
@@ -33,7 +43,7 @@ Hit ray(int model,Vec origin,Vec direction,double limit,int broken,int ruptured)
         if(node.count==0){stack[count++]=node.left;stack[count++]=node.right;continue;}
         for(int i=node.start;i<node.start+node.count;i++) {
             const auto& triangle=triangles[i];const auto& part=parts[triangle.part];
-            if((part.panel>=0&&(broken&(1<<part.panel)))||(model==0&&part.tank>=0&&(ruptured&(1<<part.tank))))continue;
+            if(removed(part,missing)||(part.panel>=0&&(broken&(1<<part.panel)))||(model==0&&part.tank>=0&&(ruptured&(1<<part.tank))))continue;
             const auto a=vertices[triangle.a],ab=sub(vertices[triangle.b],a),ac=sub(vertices[triangle.c],a);
             const auto p=cross(direction,ac);const double determinant=dot(ab,p);
             if(__builtin_fabs(determinant)<1e-14)continue;
@@ -149,7 +159,7 @@ bool overlaps(const Bounds& a,const Bounds& b) {
 }
 bool active(const Motion& body,const Triangle& triangle) {
     const auto& part=parts[triangle.part];
-    return !(part.panel>=0&&(body.body.broken&(1<<part.panel)))&&!(body.body.model==0&&part.tank>=0&&(body.body.ruptured&(1<<part.tank)));
+    return !removed(part,body.body.missing)&&!(part.panel>=0&&(body.body.broken&(1<<part.panel)))&&!(body.body.model==0&&part.tank>=0&&(body.body.ruptured&(1<<part.tank)));
 }
 bool active(const Motion& body,const Node& node) {
     return node.permanent||(node.panels&~body.body.broken)||(node.tanks&(body.body.model==0?~body.body.ruptured:-1));

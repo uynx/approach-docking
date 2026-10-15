@@ -89,6 +89,7 @@ export function createScene(canvas) {
   const collarLights=station.collarLights;
   let lastStatus=0,capturedAt=-Infinity,orbitTime=0,earthLongitude=Math.random()*Math.PI*2;
   let dockingCamera=false,lookYaw=0,lookPitch=0,lastNow;
+  let stableCombatCamera=true;
   const damageEffects=createDamageEffects(scene,station,[own,other]);
   let combatEffects;
   const look=new THREE.Quaternion();
@@ -117,6 +118,7 @@ export function createScene(canvas) {
       return lookYaw!==0||lookPitch!==0;
     },
     toggleCamera() {dockingCamera=!dockingCamera;this.resetCamera();return dockingCamera;},
+    toggleCombatCamera(){stableCombatCamera=!stableCombatCamera;this.resetCamera();return stableCombatCamera;},
     render(state,opponent,slot,active,commands,now,stationState=[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],thermal={altitude:400000,heat:0,airspeed:0},battle) {
       station.group.visible=!battle||battle.map===0;
       if(battle&&!combatEffects)combatEffects=createCombatEffects(scene,[own,other]);
@@ -166,14 +168,17 @@ export function createScene(canvas) {
         const body=own.body;
         const q=quaternion(state), origin=own.group.position.clone();
         const offset=new THREE.Vector3(0,battle?2.8:dockingCamera?0:4,dockingCamera?-2.65:battle?11:13);
-        if(battle)offset.applyQuaternion(look).applyQuaternion(q);
+        const weaponDirection=battle?.fighters[slot].aim;
+        const forward=battle&&weaponDirection&&Math.hypot(...weaponDirection)>0.5?new THREE.Vector3(weaponDirection[0],weaponDirection[1],-weaponDirection[2]):new THREE.Vector3(0,0,-1).applyQuaternion(q);
+        const cameraQ=battle&&stableCombatCamera?new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(),forward,new THREE.Vector3(0,1,0))):q;
+        if(battle)offset.applyQuaternion(look).applyQuaternion(cameraQ);
         else if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
         scene.updateMatrixWorld(true);
         const solids=solidMeshes(scene,own.group);
         camera.position.copy(clipMeshCamera(origin,origin.clone().add(offset),solids));
         camera.up.set(0,1,0);
-        if(dockingCamera||battle) camera.up.applyQuaternion(q);
-        const aim=battle?origin.clone().add(new THREE.Vector3(0,0,-40).applyQuaternion(look).applyQuaternion(q)):dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
+        if(dockingCamera||battle&&!stableCombatCamera) camera.up.applyQuaternion(q);
+        const aim=battle?origin.clone().add(new THREE.Vector3(0,0,-40).applyQuaternion(look).applyQuaternion(cameraQ)):dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
         camera.lookAt(aim);camera.updateMatrixWorld();
         const guide=thermal.guidance||state;
         const indicators=dockingIndicators(guide), color=indicators.ready?0x96e4b2:!indicators.speed?0xf28b74:0xedb879;
@@ -196,7 +201,7 @@ export function createScene(canvas) {
             noseRay.visible=true;noseHit.visible=true;
           }
         }
-        canvas.dataset.damage=body?'crushing':'none';
+        canvas.dataset.damage=own.destroyed?'destroyed':body?'crushing':state.slice(36,40).some(v=>v)?'breached':'none';
         if(body) document.getElementById('impact').textContent=`IMPACT ${(body.deformationEnergy/1000).toFixed(2)} kJ · CRUSH ${(body.capsuleCrush*100).toFixed(1)} cm${(state[Flight.impactBody]||0)===0?' · STATION '+(body.stationCrush*100).toFixed(1)+' cm':''}${own.burst?' · HULL RUPTURE '+(own.burst.pressure/1000).toFixed(1)+' kPa':''}`;
         else document.getElementById('impact').textContent='';
       } else {

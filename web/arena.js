@@ -88,7 +88,7 @@ function startTraining(){
 }
 function transmit(){
   if(mode!=='online'||snapshot?.phase!=='flight'||socket?.readyState!==WebSocket.OPEN)return;
-  const message={type:'input',seq:++sequence,axes:axes(),fire:fire||held.has('Space')};
+  const message={type:'input',seq:++sequence,axes:axes(),aim,fire:fire||held.has('Space')};
   if(pendingPower>=0)message.power=pendingPower;
   pendingPower=-1;send(message);
 }
@@ -103,7 +103,7 @@ function training(state,dt){
   $('training-progress').value=trainingStage===2?2:stability;
   $('training-stage').textContent=['Arrest the spin','Cancel the drift','Control recovered'][trainingStage];
   $('training-tip').textContent=[
-    'Your ship starts in a spin. Keep your aim steady while the attitude jets counter it. Recovery override on 2 adds damping.',
+    'Your ship starts in a spin. Use opposite arrow keys and Q/E to stop the rotation. Recovery override on 2 adds damping. Mouse aim does not steer the ship.',
     'Now cancel your drift. Hold B to apply opposite thrust, or use WASD and R/F yourself. Keep speed below 0.5 m/s for two seconds.',
     'You recovered stable flight. Aim at the practice target and fire. Collect supply pods to try the powers. Restart for another recovery.'
   ][trainingStage];
@@ -154,13 +154,14 @@ canvas.addEventListener('pointermove',event=>{
 });
 addEventListener('pointerup',event=>{if(event.button===0)fire=false;if(event.button===2){held.delete('MouseRight');scene.resetCamera();}});
 document.addEventListener('pointerlockchange',()=>{clearControls();$('engage').hidden=!enabled()||document.pointerLockElement===canvas;});
-const keys=['KeyW','KeyS','KeyA','KeyD','KeyR','KeyF','KeyQ','KeyE','KeyB','Space'];
+const keys=['KeyW','KeyS','KeyA','KeyD','KeyR','KeyF','KeyQ','KeyE','KeyB','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
 addEventListener('keydown',event=>{
   if(event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement||$('controls-dialog').open)return;
   if(keys.includes(event.code)&&enabled()){event.preventDefault();held.add(event.code);}
   if(!event.repeat&&event.code==='Digit1')usePower(0);
   if(!event.repeat&&event.code==='Digit2')usePower(1);
   if(event.code==='KeyV')scene.resetCamera();
+  if(!event.repeat&&event.code==='KeyC')$('combat-camera').click();
 });
 addEventListener('keyup',event=>held.delete(event.code));
 addEventListener('blur',()=>{clearControls();transmit();});
@@ -176,6 +177,7 @@ $('menu').onclick=()=>{
   else $('hangar').hidden=!$('hangar').hidden;
 };
 $('help').onclick=()=>{releaseMouse();$('controls-dialog').showModal();};$('close-controls').onclick=()=>$('controls-dialog').close();
+$('combat-camera').onclick=()=>{$('combat-camera').textContent=scene.toggleCombatCamera()?'Camera: stable':'Camera: follows ship';};
 $('copy-invite').onclick=async()=>{
   const url=`${location.origin}/arena?room=${room}`;
   try{await navigator.clipboard.writeText(url);toast('Invite link copied.');}catch{toast(url);}
@@ -187,12 +189,13 @@ function frame(now){
   if(enabled()&&fresh&&!document.hidden){
     accumulator+=dt;
     while(accumulator>=1/120){
-      sim.step_combat(...commands,mode==='training'&&(fire||held.has('Space'))?1:0,mode==='training'?pendingPower:-1,slot,mode==='training'?1:0);
+      sim.step_combat(...commands,mode==='training'&&(fire||held.has('Space'))?1:0,mode==='training'?pendingPower:-1,slot,mode==='training'?1:0,...aim);
       if(mode==='training')pendingPower=-1;accumulator-=1/120;
     }
   }
   sim.read_frame(slot);
   if(mode==='training')battle=readBattle(new Float64Array(sim.memory.buffer,sim.read_combat(),sim.combat_size()));
+  if(battle)battle.fighters[slot].aim=aim;
   if(mode!=='hangar')instruments(display.state,dt,now);
   const thermal={altitude:display.thermal[0],heat:display.thermal[1],airspeed:display.thermal[2]};
   scene.render(display.state,mode==='hangar'?null:display.opponent,slot,mode!=='hangar',commands,now,display.station,thermal,battle);

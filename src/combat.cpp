@@ -14,16 +14,18 @@ Vec center(const flight::State& state,int slot){return flight::add(state.positio
 struct Target {double distance=240;int body=-1;Vec point;};
 Target target(const Round& round,const flight::State* states,const flight::Station& station,int shooter) {
     const auto& state=states[shooter];
-    const auto direction=flight::rotate(state.attitude,{0,0,1});
-    const auto origin=flight::add(center(state,shooter),flight::scale(direction,3.45));
+    const auto forward=flight::rotate(state.attitude,{0,0,1});
+    const auto direction=flight::length(round.fighters[shooter].aim)>0.5?round.fighters[shooter].aim:forward;
+    const auto origin=flight::add(center(state,shooter),flight::scale(forward,3.45));
     Target result;result.point=flight::add(origin,flight::scale(direction,result.distance));
-    auto trace=[&](int model,Vec position,Quat attitude,int body,int broken=0,int ruptured=0){
+    auto trace=[&](int model,Vec position,Quat attitude,int body,int broken=0,int ruptured=0,const unsigned* missing=nullptr){
         const auto q=inverse(attitude);
-        const auto hit=collision::ray(model,flight::rotate(q,sub(origin,position)),flight::rotate(q,direction),result.distance,broken,ruptured);
+        const auto hit=collision::ray(model,flight::rotate(q,sub(origin,position)),flight::rotate(q,direction),result.distance,broken,ruptured,missing);
         if(hit.hit)result={hit.distance,body,flight::add(origin,flight::scale(direction,hit.distance))};
     };
     const int enemy=1-shooter;
-    if(round.fighters[enemy].health>0)trace(1,center(states[enemy],enemy),states[enemy].attitude,enemy);
+    if(round.fighters[enemy].health>0)trace(1,center(states[enemy],enemy),states[enemy].attitude,enemy,0,0,states[enemy].missing);
+    trace(1,center(state,shooter),state.attitude,shooter,0,0,state.missing);
     if(round.map==0) {
         const auto origin= sub(Vec{0,0,13},flight::rotate(station.attitude,{0,0,13}));
         trace(0,origin,station.attitude,2,station.broken_panels,station.ruptured_tanks);
@@ -112,6 +114,7 @@ void advance(Round& round,flight::State* states,const Command* commands,flight::
         if(state.status==2&&state.impact_age>0)state.status=0;
         else if(state.status==0&&state.impact_sequence>0)state.impact_age+=flight::step_seconds;
         if(fighter.health<=0)continue;
+        fighter.aim=commands[i].aim;
         if(resolve)power(round,states,station,i,commands[i].power);
         controls[i]=commands[i].flight;
         controls[i].translation=4;controls[i].rotation=24;controls[i].specific_impulse=1100;
@@ -184,9 +187,13 @@ void advance(Round& round,flight::State* states,const Command* commands,flight::
         fighter.shot_to=hits[i].point;
         if(hits[i].body==1-i) {
             auto& enemy=states[1-i];
-            damage(round.fighters[1-i],flight::rotate(inverse(enemy.attitude),sub(hits[i].point,center(enemy,1-i))),25);
+            const auto local=flight::rotate(inverse(enemy.attitude),sub(hits[i].point,center(enemy,1-i)));
+            const double before=round.fighters[1-i].health;
+            damage(round.fighters[1-i],local,25);
+            if(round.fighters[1-i].health<before)collision::fracture(local,1.25,enemy.missing);
         }
     }
+    for(int i=0;i<2;i++)if(round.fighters[i].health<=0)for(auto& word:states[i].missing)word=~0u;
     resolve_round(round);
 }
 }

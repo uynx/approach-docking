@@ -13,7 +13,7 @@ export function createDamageEffects(scene,station,[own,other]) {
     for(const owner of [own,other,station])for(const part of [...owner.fragments,...(owner.pressurePanels||[])])part.visible=true;
     station.deform([]);
     for(const ship of [own,other]) {
-      ship.body=undefined;ship.burst=undefined;ship.crashKey='';ship.dent=undefined;ship.fractured=false;
+      ship.body=undefined;ship.burst=undefined;ship.crashKey='';ship.dent=undefined;ship.fractured=false;ship.destroyed=false;
       ship.deform(null);
     }
   }
@@ -99,7 +99,16 @@ export function createDamageEffects(scene,station,[own,other]) {
   return {
     reset,
     update(states,stationState,dt) {
-      for(const [i,ship] of [own,other].entries())if(states[i])damage(ship,states[i],dt);
+      for(const [i,ship] of [own,other].entries())if(states[i]) {
+        const state=states[i];damage(ship,state,dt);
+        const parts=ship.fragments.filter((part,index)=>state[Flight.missing0+Math.floor(index/32)]&(1<<(index%32)));
+        detach(ship,parts,parts.filter(part=>part.visible).length*2000,ship.velocity);
+        ship.destroyed=[0,1,2,3].every(word=>state[Flight.missing0+word]===4294967295);
+        if(ship.destroyed) {
+          detach(ship,ship.pressurePanels||[],5000,ship.velocity);
+          ship.group.visible=false;
+        }
+      }
       station.deform(dents);
       for(let panel=0;panel<8;panel++)if(stationState[Station.brokenPanels]&(1<<panel))
         detach(station,station.fragments.filter(part=>part.userData.panel===panel),350,station.velocity);

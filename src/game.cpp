@@ -145,6 +145,20 @@ void Game::receive(int peer,const std::string& text) {
         if((fire&&!fire->is_bool())||(power&&(!power->is_int64()||power->as_int64()<0||power->as_int64()>1))) {
             error(peer,"Invalid weapon controls.");return;
         }
+        flight::Vec direction;
+        if(const auto aim=obj.if_contains("aim")) {
+            if(!aim->is_array()||aim->as_array().size()!=3){error(peer,"Invalid aim direction.");return;}
+            double values[3];
+            for(int i=0;i<3;i++) {
+                const auto& value=aim->as_array()[i];
+                if(!value.is_number()||!std::isfinite(value.to_number<double>())){error(peer,"Invalid aim direction.");return;}
+                values[i]=value.to_number<double>();
+            }
+            direction={values[0],values[1],values[2]};
+            const double length=flight::length(direction);
+            if(length<0.999||length>1.001){error(peer,"Aim must be a unit direction.");return;}
+            direction=flight::scale(direction,1/length);
+        }
         for(int i=0;i<6;++i) {
             const auto& axis=axes->as_array()[i];
             if(!axis.is_number()) {error(peer,"Invalid thrust.");return;}
@@ -154,6 +168,7 @@ void Game::receive(int peer,const std::string& text) {
         }
         p->sequence=sequence->as_int64(); p->controls=controls; p->last_input=tick_;
         p->fire=fire&&fire->as_bool();p->power=power?static_cast<int>(power->as_int64()):-1;
+        p->aim=direction;
         return;
     }
     error(peer,"Unknown command.");
@@ -196,7 +211,7 @@ void Game::tick() {
             if(room.combat) {
                 combat::Command commands[2];
                 for(int i=0;i<2;i++) {
-                    auto& p=room.pilots[i];commands[i]={p.controls,p.fire,p.power};p.power=-1;
+                    auto& p=room.pilots[i];commands[i]={p.controls,p.fire,p.power,p.aim};p.power=-1;
                     if(p.peer<0&&tick_-p.last_input>1200)room.battle.fighters[i].health=0;
                 }
                 combat::advance(room.battle,states,commands,room.station);

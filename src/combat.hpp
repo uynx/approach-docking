@@ -15,9 +15,10 @@ struct Fighter {
     flight::Vec shot_from, shot_to;
     int shot_age=100, shot_hit=-1;
     double last_impact=0;
+    flight::Vec aim;
 };
 struct Pickup {flight::Vec position;int power=Empty, cooldown=0;};
-struct Command {flight::Controls flight;bool fire=false;int power=-1;};
+struct Command {flight::Controls flight;bool fire=false;int power=-1;flight::Vec aim;};
 struct Round {
     Fighter fighters[2];
     Pickup pickups[6];
@@ -29,7 +30,7 @@ void reset(Round&,flight::State*,flight::Station&);
 void advance(Round&,flight::State*,const Command*,flight::Station&,bool resolve=true);
 double steering(const Fighter&);
 double propulsion(const Fighter&);
-constexpr int packed_size=123;
+constexpr int packed_size=129;
 template<class T,class Visitor> void visit(T& round,Visitor visitor) {
     int at=0;
     auto field=[&](auto& value){visitor(at++,value);};
@@ -41,7 +42,7 @@ template<class T,class Visitor> void visit(T& round,Visitor visitor) {
         field(f.items[0]);field(f.items[1]);field(f.reload);field(f.spin);field(f.immune);
         field(f.tether);field(f.decoy);field(f.stabilize);field(f.tether_length);vector(f.tether_point);
         vector(f.decoy_position);vector(f.decoy_velocity);field(f.shot_sequence);vector(f.shot_from);vector(f.shot_to);
-        field(f.shot_age);field(f.shot_hit);field(f.last_impact);
+        field(f.shot_age);field(f.shot_hit);field(f.last_impact);vector(f.aim);
     }
     for(auto& p:round.pickups){vector(p.position);field(p.power);field(p.cooldown);}
 }

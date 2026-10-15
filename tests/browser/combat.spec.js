@@ -7,6 +7,10 @@ test('recovery training uses mouse aiming and the shared combat simulation',asyn
   await expect(page.locator('#combat-mode')).toHaveText('RECOVERY TRAINING');
   await expect(page.locator('#viewport')).toHaveAttribute('data-rendered','true');
   await expect(page.locator('#training-tip')).toContainText('spin');
+  await page.getByRole('button',{name:'Camera: stable',exact:true}).click();
+  await expect(page.locator('#combat-camera')).toHaveText('Camera: follows ship');
+  await page.keyboard.press('c');
+  await expect(page.locator('#combat-camera')).toHaveText('Camera: stable');
   const fuel=Number(await page.locator('#combat-fuel').textContent());
   await page.keyboard.down('w');await page.waitForTimeout(800);await page.keyboard.up('w');
   await expect.poll(async()=>Number(await page.locator('#combat-fuel').textContent())).toBeLessThan(fuel);
@@ -20,6 +24,7 @@ test('two combat browsers see the same hit, weakened ship and round winner',asyn
   const a=await browser.newContext(),b=await browser.newContext();
   try {
     const one=await a.newPage(),two=await b.newPage();
+    const errors=[];for(const page of [one,two])page.on('pageerror',error=>{errors.push(error.message);console.log(error.stack);});
     await one.goto('/arena');await two.goto('/arena');
     await one.getByLabel('Callsign').fill('Alice');await one.getByRole('button',{name:'Create PvP room'}).click();
     await expect(one.locator('#combat-room')).toHaveText(/^[A-Z2-9]{6}$/);
@@ -31,11 +36,14 @@ test('two combat browsers see the same hit, weakened ship and round winner',asyn
     await expect(two.locator('#combat-mode')).toHaveText('LIVE PVP');
     await one.keyboard.down('Space');
     await expect(two.locator('#hull-value')).toHaveText('0',{timeout:10000});
+    await expect(two.locator('#viewport')).toHaveAttribute('data-damage','destroyed');
+    expect(Number(await two.locator('#viewport').getAttribute('data-fragments'))).toBeGreaterThan(20);
     await one.keyboard.up('Space');
     await expect(one.locator('#combat-score')).toHaveText('1 : 0');
     await expect(two.locator('#combat-score')).toHaveText('0 : 1');
     await expect(two.locator('#round-message')).toContainText('Alice wins');
     await two.reload();
-    await expect(two.locator('#combat-room')).toHaveText(room);
+    await expect(two.locator('#combat-room')).toHaveText(room,{timeout:15000});
+    expect(errors).toEqual([]);
   } finally {await a.close();await b.close();}
 });

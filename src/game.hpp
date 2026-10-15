@@ -25,6 +25,7 @@ private:
         unsigned long last_input=0;
         bool fire=false;
         int power=-1;
+        flight::Vec aim;
     };
     struct Room {
         std::array<Pilot,2> pilots;

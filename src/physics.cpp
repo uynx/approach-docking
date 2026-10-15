@@ -84,7 +84,7 @@ bool station_contact(State& s,int slot,const Station& station) {
     const Vec center=add(s.position,{slot?18.0:-18.0,0,-3.2});
     const Vec relative=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
     if(length(center)>80+length(s.velocity)*step_seconds)return false;
-    const collision::Body capsule{1,center,s.attitude,s.velocity,relative};
+    const collision::Body capsule{1,center,s.attitude,s.velocity,relative,0,0,s.missing};
     const collision::Body target{0,{0,0,13},station.attitude,{},station.omega,station.broken_panels,station.ruptured_tanks};
     const auto hit=collision::sweep(capsule,target,step_seconds);
     if(!hit.hit)return false;
@@ -295,7 +295,7 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
             const Vec spin=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
             const Vec center=add(s.position,{(i^first_slot)?18.0:-18.0,0,-3.2});
             if(length(add(center,scale(target.position,-1)))>12+(length(s.velocity)+length(target.velocity))*dt)continue;
-            const collision::Body capsule{1,center,s.attitude,s.velocity,spin},satellite{2,target.position,target.attitude,target.velocity,target.omega};
+            const collision::Body capsule{1,center,s.attitude,s.velocity,spin,0,0,s.missing},satellite{2,target.position,target.attitude,target.velocity,target.omega};
             const auto hit=collision::sweep(capsule,satellite,dt);if(!hit.hit)continue;
             const Vec arm=add(hit.point,scale(add(center,scale(s.velocity,dt*(hit.fraction-1))),-1));
             const Vec target_arm=add(hit.point,scale(add(target.position,scale(target.velocity,dt*(hit.fraction-1))),-1));
@@ -317,7 +317,7 @@ void advance_system(State* states,const Controls* controls,int count,Station& st
         for(int i=0;i<2;i++) {
             const auto& s=states[i];
             const Vec spin=add(s.omega,scale(rotate(conjugate(s.attitude),{mean_motion(),0,0}),-1));
-            bodies[i]={1,add(s.position,{(i^first_slot)?18.0:-18.0,0,-3.2}),s.attitude,s.velocity,spin};
+            bodies[i]={1,add(s.position,{(i^first_slot)?18.0:-18.0,0,-3.2}),s.attitude,s.velocity,spin,0,0,s.missing};
         }
         const auto hit=collision::sweep(bodies[0],bodies[1],dt);
         if(!hit.hit)return;

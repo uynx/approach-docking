@@ -35,6 +35,10 @@ export const Flight = Object.freeze({
   burnedFuel: 33,
   stationBurnedFuel: 34,
   impactBody: 35,
+  missing0: 36,
+  missing1: 37,
+  missing2: 38,
+  missing3: 39,
 });
 
 export const Station = Object.freeze({

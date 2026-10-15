@@ -20,11 +20,15 @@ void reset_combat(int map,int training) {
     battle={};battle.map=map==1?1:0;battle.training=training!=0;
     flight::State states[2];combat::reset(battle,states,station);state=states[0];opponent=states[1];opponent_present=true;
 }
-void step_combat(double x,double y,double z,double pitch,double yaw,double roll,int fire,int power,int slot,int resolve) {
+void step_combat(double x,double y,double z,double pitch,double yaw,double roll,int fire,int power,int slot,int resolve,double ax,double ay,double az) {
     if(slot<0||slot>1)return;
     flight::State states[2];combat::Command commands[2];
     states[slot]=state;states[1-slot]=opponent;
     commands[slot]={{{x,y,z,pitch,yaw,roll}},fire!=0,power};
+    if(__builtin_isfinite(ax)&&__builtin_isfinite(ay)&&__builtin_isfinite(az)) {
+        const double length=flight::length({ax,ay,az});
+        if(length>0.5)commands[slot].aim=flight::scale({ax,ay,az},1/length);
+    }
     combat::advance(battle,states,commands,station,resolve!=0);
     state=states[slot];opponent=states[1-slot];
 }

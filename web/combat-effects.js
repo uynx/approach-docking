@@ -8,7 +8,13 @@ export function createCombatEffects(scene,ships) {
     const object=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color,transparent:true,depthWrite:false,toneMapped:false}));
     object.frustumCulled=false;group.add(object);return object;
   };
-  const lasers=[line(0x8fffe1),line(0xffa289)],cables=[line(0x8dc9ff),line(0xffd79b)];
+  const lasers=[0x8fffe1,0xffa289].map(color=>{
+    const beam=new THREE.Group();
+    const core=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,1,8,1,true),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,depthWrite:false,toneMapped:false}));
+    const glow=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1,8,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.25,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false}));
+    const flash=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,8),new THREE.MeshBasicMaterial({color,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false}));
+    beam.add(core,glow);group.add(beam,flash);return {beam,core,glow,flash};
+  }),cables=[line(0x8dc9ff),line(0xffd79b)];
   const pods=Array.from({length:6},(_,i)=>{
     const pod=new THREE.Group();pod.name=`supply-pod-${i}`;
     const frame=new THREE.Mesh(new THREE.IcosahedronGeometry(0.8,0),new THREE.MeshStandardMaterial({color:0x9ee6d4,metalness:0.5,roughness:0.35,emissive:0x8ff9da,emissiveIntensity:0.3}));
@@ -39,8 +45,11 @@ export function createCombatEffects(scene,ships) {
       });
       for(let local=0;local<2;local++) {
         const pilot=local^slot,fighter=battle.fighters[pilot],ship=ships[local];
-        const laser=lasers[local];laser.visible=fighter.shotAge<12;laser.material.opacity=Math.max(0,1-fighter.shotAge/12);
-        segment(laser,point(fighter.shotFrom),point(fighter.shotTo),offset);
+        const laser=lasers[local],from=point(fighter.shotFrom).add(offset),to=point(fighter.shotTo).add(offset),delta=to.clone().sub(from),length=delta.length();
+        laser.beam.visible=fighter.shotAge<10&&length>0.01;laser.flash.visible=fighter.shotAge<18&&fighter.shotHit>=0;
+        laser.beam.position.copy(from);laser.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());
+        for(const [mesh,opacity] of [[laser.core,1],[laser.glow,0.3]]){mesh.position.y=length/2;mesh.scale.y=length;mesh.material.opacity=opacity*Math.max(0,1-fighter.shotAge/12);}
+        laser.flash.position.copy(to);laser.flash.scale.setScalar(1+fighter.shotAge*0.12);laser.flash.material.opacity=Math.max(0,1-fighter.shotAge/18);
         const cable=cables[local];cable.visible=fighter.tether>0;
         const target=ships[1-local].group.localToWorld(point(fighter.tetherPoint));
         segment(cable,ship.group.localToWorld(new THREE.Vector3(0,0,-3)),target,new THREE.Vector3());
