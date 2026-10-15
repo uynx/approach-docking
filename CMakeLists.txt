@@ -51,10 +51,11 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/web/physics.wasm
         -Wl,--export=restore_opponent -Wl,--export=set_opponent -Wl,--export=opponent_component
         -Wl,--export=guidance_component -Wl,--export=flight_alignment -Wl,--export=flight_spin -Wl,--export=flight_altitude -Wl,--export=flight_heat -Wl,--export=flight_airspeed
         -Wl,--export=judge_flight -Wl,--export=station_component -Wl,--export=restore_station
+        -Wl,--export=reset_combat -Wl,--export=step_combat -Wl,--export=read_combat -Wl,--export=combat_size -Wl,--export=restore_combat
         -Wl,--allow-undefined -Wl,-z,stack-size=262144
-        ${CMAKE_SOURCE_DIR}/src/physics.cpp ${CMAKE_SOURCE_DIR}/src/mesh.cpp ${CMAKE_SOURCE_DIR}/src/wasm.cpp
+        ${CMAKE_SOURCE_DIR}/src/physics.cpp ${CMAKE_SOURCE_DIR}/src/mesh.cpp ${CMAKE_SOURCE_DIR}/src/combat.cpp ${CMAKE_SOURCE_DIR}/src/wasm.cpp
         -o ${CMAKE_BINARY_DIR}/web/physics.wasm
-    DEPENDS src/physics.cpp src/physics.hpp src/state_io.hpp src/wasm.cpp src/mesh.cpp src/mesh.hpp ${CMAKE_BINARY_DIR}/mesh-data.hpp VERBATIM)
+    DEPENDS src/physics.cpp src/physics.hpp src/state_io.hpp src/wasm.cpp src/mesh.cpp src/mesh.hpp src/combat.cpp src/combat.hpp ${CMAKE_BINARY_DIR}/mesh-data.hpp VERBATIM)
 add_custom_target(wasm ALL DEPENDS ${CMAKE_BINARY_DIR}/web/physics.wasm)
 add_custom_target(web ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/web ${CMAKE_BINARY_DIR}/web

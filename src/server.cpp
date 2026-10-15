@@ -68,6 +68,7 @@ public:
         const std::map<std::string,std::string> files={{"/","text/html; charset=utf-8"},
             {"/app.js","text/javascript"},{"/scene.js","text/javascript"},{"/style.css","text/css"},
             {"/flight-view.js","text/javascript"},{"/damage.js","text/javascript"},{"/tutorial.js","text/javascript"},
+            {"/arena","text/html; charset=utf-8"},{"/arena.js","text/javascript"},{"/arena.css","text/css"},{"/combat-view.js","text/javascript"},{"/combat-effects.js","text/javascript"},
             {"/state.js","text/javascript"},{"/damage-effects.js","text/javascript"},{"/models.js","text/javascript"},{"/assets/earth.jpg","image/jpeg"},{"/assets/stars.jpg","image/jpeg"},{"/assets/moon.jpg","image/jpeg"},
             {"/physics.wasm","application/wasm"},{"/vendor/three.module.js","text/javascript"},
             {"/vendor/three.core.js","text/javascript"}};
@@ -76,7 +77,7 @@ public:
         } else if(path=="/health") {
             response->set(http::field::content_type,"application/json"); response->body()="{\"status\":\"ok\"}";
         } else if(files.count(path)) {
-            const auto filename=server.web+(path=="/" ? "/index.html" : path);
+            const auto filename=server.web+(path=="/" ? "/index.html" : path=="/arena"?"/arena.html":path);
             auto file=std::make_shared<http::response<http::file_body>>(http::status::ok,11);
             beast::error_code ec;file->body().open(filename.c_str(),beast::file_mode::scan,ec);
             if(ec){response->result(http::status::not_found);response->body()="Not found";}

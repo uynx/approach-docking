@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Approach · Orbital combat</title>
+  <link rel="stylesheet" href="/arena.css">
+  <script type="module" src="/arena.js"></script>
+</head>
+<body>
+  <canvas id="viewport" aria-label="Spacecraft combat arena"></canvas>
+  <header><a class="brand" href="/arena">APPROACH <span>ORBITAL COMBAT</span></a><nav><span id="connection">LOADING</span><button id="menu">Menu</button><button id="help">Controls</button><a href="/">Docking flight</a></nav></header>
+  <main id="hangar">
+    <div class="intro"><span class="eyebrow">SPACECRAFT PVP</span><h1>Keep control.<br>Take the shot.</h1><p>Fight another pilot with lasers, thrusters and disruptive powerups. Your ship keeps its momentum. Damage weakens its thrusters.</p><p class="rules">Destroy the other ship to win a round. First to three round wins takes the match. Collect supply pods to refill your two power slots.</p></div>
+    <section class="panel" aria-label="Combat setup">
+      <h2>Flight deck</h2>
+      <label for="callsign">Callsign</label><input id="callsign" maxlength="20" autocomplete="nickname" spellcheck="false">
+      <label for="arena-map">Arena</label><select id="arena-map"><option value="shipyard">Station shipyard</option><option value="scrapyard">Orbital scrapyard</option></select>
+      <button id="create-combat" class="primary" disabled>Create PvP room</button>
+      <div class="join-row"><label class="sr-only" for="join-code">Room code</label><input id="join-code" placeholder="ROOM CODE" maxlength="6" spellcheck="false"><button id="join-combat" disabled>Join PvP room</button></div>
+      <div class="divider"></div><button id="training" disabled>Recovery training</button><p class="small">Start with a spinning, drifting ship. Regain control, then practice your aim on a target.</p>
+    </section>
+  </main>
+  <section id="combat-ui" hidden>
+    <div class="match-strip"><span id="combat-mode">LOBBY</span><span id="map-name"></span><span>ROUND <b id="combat-round">1</b></span><strong id="combat-score">0 : 0</strong><time id="combat-clock">2:00</time></div>
+    <aside id="room-panel" class="panel" hidden><div class="eyebrow">ROOM <strong id="combat-room"></strong></div><h2 id="opponent-name">Waiting for opponent</h2><p id="room-status">Share the room code or invite link.</p><button id="copy-invite">Copy invite link</button><button id="ready-combat" class="primary">Ready to fight</button><button id="leave-combat">Leave room</button></aside>
+    <div id="round-message" role="status"></div>
+    <div id="target-marker" hidden><span id="target-name"></span><span id="target-range"></span></div>
+    <div id="aim-reticle" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <button id="engage">Click to aim · Esc releases mouse</button>
+    <aside id="training-panel" hidden><span class="eyebrow">RECOVERY COURSE</span><h2 id="training-stage">Arrest the spin</h2><p id="training-tip"></p><progress id="training-progress" max="2" value="0" aria-label="Stable flight progress"></progress><button id="reset-training">Restart training</button></aside>
+    <div id="damage-warning" role="status"></div>
+    <aside class="ship-status"><div class="hull"><span>HULL INTEGRITY</span><strong id="hull-value">100</strong><meter id="hull-bar" min="0" max="100" value="100" aria-label="Hull integrity"></meter></div><div class="systems"><span>PROPULSION <b id="propulsion">100%</b></span><span>ATTITUDE JETS <b id="steering">100%</b></span><span>FUEL <b><span id="combat-fuel">80.0</span> kg</b></span><span>SPEED <b id="combat-speed">0.0 m/s</b></span><span>SPIN <b id="combat-spin">0.0°/s</b></span><span>ARMOR <b id="combat-shield">0</b></span></div></aside>
+    <div class="loadout"><button id="power-0"><kbd>1</kbd><strong>EMPTY</strong><small></small></button><button id="power-1"><kbd>2</kbd><strong>EMPTY</strong><small></small></button></div>
+    <footer><span id="combat-hint">Mouse aims · Left click fires · WASD moves · R/F rises/descends · Q/E rolls · B brakes · 1/2 powers</span><span id="weapon-status">LASER READY</span></footer>
+  </section>
+  <dialog id="controls-dialog"><button id="close-controls" class="close" aria-label="Close controls">×</button><h2>Fly and fight</h2><p>Click the flight view to capture the mouse. Move the mouse to aim your ship using its attitude thrusters. Left click or Space fires the laser. Esc releases the mouse.</p><p>W/S thrust forward/back. A/D thrust sideways. R/F thrust up/down. Q/E roll. Hold B for opposite thrust to brake your drift. Releasing a key lets you coast. Right mouse lets you look around; V recenters.</p><p>1 and 2 activate the powers you carry. Fly within 4 m of a supply pod with an empty slot to collect it. Every supply pod also restores 15 kg of fuel. Pods return after 12 seconds.</p><p>Spin bugs and tow cables require a clear shot within 90 m. Recovery override helps arrest rotation. A kick adds forward velocity. Decoys imitate a ship; scrap armor absorbs 50 damage.</p><p>A laser hit removes 25 hull points before armor. Hits damage nearby thruster groups, and unequal thrust can make your ship veer. Collisions also cause damage. Staying beyond the 180 m arena boundary damages your hull.</p><p>Each round lasts two minutes. Destroy your opponent, or have more hull integrity when time expires. Equal integrity is a draw. First to three wins takes the match. A disconnected pilot has ten seconds to reconnect.</p></dialog>
+  <div id="toast" role="alert" hidden></div>
+  <div hidden><span id="station-motion"></span><span id="impact"></span><span id="port-marker"></span></div>
+</body>
+</html>

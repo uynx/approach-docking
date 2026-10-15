@@ -1,4 +1,5 @@
 #include "state_io.hpp"
+#include "combat.hpp"
 
 static flight::State state;
 static flight::State opponent;
@@ -6,7 +7,27 @@ static bool opponent_present=false;
 // wasm-ld repeats dynamic global constructors when an export is called.
 static flight::Station station{{},{},{},{},0,0,{}};
 static double frame_values[flight::state_size*3+flight::station_size+3];
+static combat::Round battle;
+static double combat_values[combat::packed_size];
 extern "C" {
+int combat_size(){return combat::packed_size;}
+double* read_combat(){combat::visit(battle,[](int i,auto value){combat_values[i]=value;});return combat_values;}
+void restore_combat(int index,double value) {
+    if(!__builtin_isfinite(value))return;
+    combat::visit(battle,[&](int i,auto& field){if(i==index)flight::restore_field(field,value);});
+}
+void reset_combat(int map,int training) {
+    battle={};battle.map=map==1?1:0;battle.training=training!=0;
+    flight::State states[2];combat::reset(battle,states,station);state=states[0];opponent=states[1];opponent_present=true;
+}
+void step_combat(double x,double y,double z,double pitch,double yaw,double roll,int fire,int power,int slot,int resolve) {
+    if(slot<0||slot>1)return;
+    flight::State states[2];combat::Command commands[2];
+    states[slot]=state;states[1-slot]=opponent;
+    commands[slot]={{{x,y,z,pitch,yaw,roll}},fire!=0,power};
+    combat::advance(battle,states,commands,station,resolve!=0);
+    state=states[slot];opponent=states[1-slot];
+}
 int frame_size() {return sizeof(frame_values)/sizeof(frame_values[0]);}
 double* read_state() {flight::visit_state(state,[](int i,double value){frame_values[i]=value;});return frame_values;}
 double* read_frame(int slot) {

@@ -2,6 +2,7 @@ import { Flight, Station } from './state.js';
 import * as THREE from '/vendor/three.module.js';
 import { shipPosition, dockingIndicators, thrusters, firing, meanMotion } from './flight-view.js';
 import { createDamageEffects } from './damage-effects.js';
+import { createCombatEffects } from './combat-effects.js';
 import { stationModel, spacecraftModel,satelliteModel,solidMeshes,clipMeshCamera,meshHit,batchRendering } from './models.js';
 
 export function createScene(canvas) {
@@ -89,6 +90,7 @@ export function createScene(canvas) {
   let lastStatus=0,capturedAt=-Infinity,orbitTime=0,earthLongitude=Math.random()*Math.PI*2;
   let dockingCamera=false,lookYaw=0,lookPitch=0,lastNow;
   const damageEffects=createDamageEffects(scene,station,[own,other]);
+  let combatEffects;
   const look=new THREE.Quaternion();
   const marker=document.getElementById('port-marker');
   const quaternion=s=>new THREE.Quaternion(-s[Flight.qx],-s[Flight.qy],s[Flight.qz],s[Flight.qw]);
@@ -115,7 +117,9 @@ export function createScene(canvas) {
       return lookYaw!==0||lookPitch!==0;
     },
     toggleCamera() {dockingCamera=!dockingCamera;this.resetCamera();return dockingCamera;},
-    render(state,opponent,slot,active,commands,now,stationState=[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],thermal={altitude:400000,heat:0,airspeed:0}) {
+    render(state,opponent,slot,active,commands,now,stationState=[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],thermal={altitude:400000,heat:0,airspeed:0},battle) {
+      station.group.visible=!battle||battle.map===0;
+      if(battle&&!combatEffects)combatEffects=createCombatEffects(scene,[own,other]);
       const dt=lastNow===undefined?0:Math.max(0,Math.min(0.1,(now-lastNow)/1000));lastNow=now;
       const stationOffset=new THREE.Vector3(stationState[Station.x],stationState[Station.y],-stationState[Station.z]);
       satellites.children.forEach((satellite,i)=>{
@@ -161,20 +165,25 @@ export function createScene(canvas) {
         damageEffects.update([state,opponent],stationState,dt);
         const body=own.body;
         const q=quaternion(state), origin=own.group.position.clone();
-        const offset=new THREE.Vector3(0,dockingCamera?0:4,dockingCamera?-2.65:13);
-        if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
+        const offset=new THREE.Vector3(0,battle?2.8:dockingCamera?0:4,dockingCamera?-2.65:battle?11:13);
+        if(battle)offset.applyQuaternion(look).applyQuaternion(q);
+        else if(dockingCamera) offset.applyQuaternion(q); else offset.applyQuaternion(look);
         scene.updateMatrixWorld(true);
         const solids=solidMeshes(scene,own.group);
         camera.position.copy(clipMeshCamera(origin,origin.clone().add(offset),solids));
         camera.up.set(0,1,0);
-        if(dockingCamera) camera.up.applyQuaternion(q);
-        const aim=dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
+        if(dockingCamera||battle) camera.up.applyQuaternion(q);
+        const aim=battle?origin.clone().add(new THREE.Vector3(0,0,-40).applyQuaternion(look).applyQuaternion(q)):dockingCamera?camera.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(look).applyQuaternion(q)):origin;
         camera.lookAt(aim);camera.updateMatrixWorld();
         const guide=thermal.guidance||state;
         const indicators=dockingIndicators(guide), color=indicators.ready?0x96e4b2:!indicators.speed?0xf28b74:0xedb879;
         indicatorMaterial.color.setHex(color);noseHit.material.color.setHex(color);
-        project(marker,station.group.localToWorld(new THREE.Vector3(portX,0,0)));marker.dataset.state=indicators.ready?'ready':!indicators.speed?'brake':'correct';
-        if(!state[Flight.status]&&thermal.altitude>150000) {
+        if(battle) {
+          marker.hidden=true;
+          const target=document.getElementById('target-marker');
+          if(target&&opponent&&battle.fighters[1-slot].health>0)project(target,other.group.position);else if(target)target.hidden=true;
+        } else {project(marker,station.group.localToWorld(new THREE.Vector3(portX,0,0)));marker.dataset.state=indicators.ready?'ready':!indicators.speed?'brake':'correct';}
+        if(!battle&&!state[Flight.status]&&thermal.altitude>150000) {
           const nose=new THREE.Vector3(0,0,-3.2).applyQuaternion(q).add(origin);
           const hit=meshHit(nose,new THREE.Vector3(0,0,-1).applyQuaternion(q),solids);
           if(hit) {
@@ -196,6 +205,7 @@ export function createScene(canvas) {
         camera.position.set(65+Math.sin(now/12000)*4,25,90);camera.up.set(0,1,0);camera.lookAt(-10,0,-8);
         marker.hidden=true;
       }
+      if(combatEffects)combatEffects.update(battle,slot,stationOffset,now);
       const counts=damageEffects.advance(dt);
       for(const sync of renderBatches)sync();
       canvas.dataset.fragments=String(counts.fragments);

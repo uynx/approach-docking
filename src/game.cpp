@@ -134,7 +134,7 @@ void Game::receive(int peer,const std::string& text) {
         return;
     }
     if(type=="input") {
-        if(room.phase!="flight" || p->state.status) { error(peer,"Flight controls are not active."); return; }
+        if(room.phase!="flight" || (room.combat?room.battle.fighters[p-room.pilots.begin()].health<=0:p->state.status!=0)) { error(peer,"Flight controls are not active."); return; }
         auto sequence=obj.if_contains("seq"), axes=obj.if_contains("axes");
         if(!sequence || !sequence->is_int64() || sequence->as_int64()<0 || sequence->as_int64()>9007199254740991LL
             || sequence->as_int64()<=p->sequence || !axes || !axes->is_array() || axes->as_array().size()!=6) {
