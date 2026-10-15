@@ -46,10 +46,13 @@ void Game::broadcast(const std::string& code,const Room& room) {
     if(room.combat) {
         json::array fighters;
         for(const auto& fighter:room.battle.fighters)fighters.push_back(json::object{{"steering",combat::steering(fighter)},
-            {"propulsion",combat::propulsion(fighter)},{"shield",fighter.shield},{"shots",fighter.shot_sequence}});
+            {"propulsion",combat::propulsion(fighter)},{"shield",fighter.shield},{"shots",fighter.shot_sequence},
+            {"items",json::array{fighter.items[0],fighter.items[1]}}});
+        json::array packed;
+        combat::visit(room.battle,[&](int,auto value){packed.push_back(value);});
         message["combat"]=json::object{{"map",room.battle.map?"scrapyard":"shipyard"},
         {"health",json::array{room.battle.fighters[0].health,room.battle.fighters[1].health}},
-        {"fighters",fighters},{"round",room.battle.number},{"wins",json::array{room.battle.wins[0],room.battle.wins[1]}}};
+        {"fighters",fighters},{"packed",packed},{"round",room.battle.number},{"wins",json::array{room.battle.wins[0],room.battle.wins[1]}}};
     }
     for(const auto& p:room.pilots) if(p.peer>=0) send_(p.peer,message);
 }
@@ -103,6 +106,7 @@ void Game::receive(int peer,const std::string& text) {
     if(type=="leave") {
         if(room.phase=="flight") {
             if(!p->state.status) p->state.status=2;
+            if(room.combat)room.battle.fighters[p-room.pilots.begin()].health=0;
             p->token.clear();
         } else *p=Pilot{};
         disconnect(peer);
@@ -111,9 +115,10 @@ void Game::receive(int peer,const std::string& text) {
     if(type=="ready") {
         if(room.phase=="finished") {
             room.phase="lobby"; room.station={};
+            if(room.combat){room.battle.wins[0]=0;room.battle.wins[1]=0;room.battle.number=1;}
             for(auto& pilot:room.pilots) {
                 if(pilot.peer<0 && pilot.token.empty()) pilot=Pilot{};
-                pilot.ready=false; pilot.state=flight::initial(std::random_device{}()); pilot.controls={};
+                pilot.ready=false; pilot.state=flight::initial(std::random_device{}()); pilot.controls={};pilot.fire=false;pilot.power=-1;
             }
         }
         if(room.phase!="lobby") { error(peer,"The round has already started."); return; }
@@ -158,7 +163,7 @@ void Game::disconnect(int peer) {
     if(joined==joined_.end()) return;
     const auto code=joined->second;
     auto& room=rooms_.at(code);
-    for(auto& p:room.pilots) if(p.peer==peer) {p.peer=-1;p.controls={};p.ready=false;p.fire=false;p.power=-1;}
+    for(auto& p:room.pilots) if(p.peer==peer) {p.peer=-1;p.controls={};p.ready=false;p.fire=false;p.power=-1;p.last_input=tick_;}
     if(room.phase=="countdown") {
         room.phase="lobby";
         for(auto& p:room.pilots) p.ready=false;
@@ -175,6 +180,12 @@ void Game::tick() {
             it=rooms_.erase(it); continue;
         }
         if(room.phase=="countdown" && tick_>=room.start) room.phase="flight";
+        if(room.combat&&room.phase=="intermission"&&tick_>=room.start) {
+            ++room.battle.number;
+            flight::State states[2];combat::reset(room.battle,states,room.station);
+            for(int i=0;i<2;i++){room.pilots[i].state=states[i];room.pilots[i].controls={};room.pilots[i].fire=false;room.pilots[i].power=-1;}
+            room.phase="flight";
+        }
         if(room.phase=="flight" || room.phase=="finished") {
             flight::State states[]={room.pilots[0].state,room.pilots[1].state};
             flight::Controls controls[2];
@@ -184,14 +195,21 @@ void Game::tick() {
             }
             if(room.combat) {
                 combat::Command commands[2];
-                for(int i=0;i<2;i++) {auto& p=room.pilots[i];commands[i]={p.controls,p.fire,p.power};p.power=-1;}
+                for(int i=0;i<2;i++) {
+                    auto& p=room.pilots[i];commands[i]={p.controls,p.fire,p.power};p.power=-1;
+                    if(p.peer<0&&tick_-p.last_input>1200)room.battle.fighters[i].health=0;
+                }
                 combat::advance(room.battle,states,commands,room.station);
             } else flight::advance_system(states,controls,2,room.station,flight::step_seconds);
             for(int i=0;i<2;++i) {
                 if(!room.combat)flight::judge(states[i],i,room.station);
                 room.pilots[i].state=states[i];
             }
-            if(room.combat&&room.battle.result!=-2)room.phase="finished";
+            if(room.combat&&room.battle.result!=-2&&room.phase=="flight") {
+                room.phase=room.battle.wins[0]>=3||room.battle.wins[1]>=3?"finished":"intermission";
+                room.start=tick_+360;
+                for(auto& p:room.pilots){p.controls={};p.fire=false;p.power=-1;p.ready=false;}
+            }
             if(!room.combat&&room.pilots[0].state.status && room.pilots[1].state.status) {
                 room.phase="finished";
                 for(auto& p:room.pilots) {p.ready=false;p.controls={};}

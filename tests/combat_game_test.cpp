@@ -35,4 +35,33 @@ int main() {
     game.receive(1,R"({"type":"damage","target":1,"amount":100})");
     require(messages[1].back().at("type")=="error","clients cannot submit damage claims");
     std::cout<<"PASS authoritative ray hits, cooldown enforcement and system damage\n";
+    long sequence=1000;
+    for(int round=1;round<=3;round++) {
+        for(int frame=0;frame<30;frame++) {
+            game.receive(1,json::serialize(json::object{{"type","input"},{"seq",++sequence},
+                {"axes",json::array{0,0,0,0,0,0}},{"fire",true}}));
+            for(int i=0;i<6;i++)game.tick();
+            if(messages[1].back().at("phase")!="flight")break;
+        }
+        require(messages[1].back().at("combat").at("wins").as_array()[0].to_number<int>()==round,"a destruction awards exactly one round win");
+        require(messages[1].back().at("phase")== (round==3?"finished":"intermission"),"only the third round win finishes the match");
+        if(round<3) {
+            for(int i=0;i<366;i++)game.tick();
+            require(messages[1].back().at("phase")=="flight","the next round starts automatically");
+            require(messages[1].back().at("combat").at("health").as_array()[1].to_number<double>()==100,"a new round repairs the ship");
+        }
+    }
+    for(int i=0;i<120;i++)game.tick();
+    require(messages[1].back().at("combat").at("wins").as_array()[0].to_number<int>()==3,"a completed match cannot award extra wins");
+    game.receive(1,R"({"type":"ready"})");game.receive(2,R"({"type":"ready"})");
+    for(int i=0;i<366;i++)game.tick();
+    require(messages[1].back().at("combat").at("wins").as_array()[0].to_number<int>()==0,"a rematch clears the match score");
+    game.receive(2,R"({"type":"input","seq":10000,"axes":[0,0,0,0,0,0],"power":0})");
+    for(int i=0;i<6;i++)game.tick();
+    require(messages[1].back().at("pilots").as_array()[1].at("state").as_array()[3].to_number<double>()< -5,"a kick produces a server-owned velocity impulse");
+    require(messages[1].back().at("combat").at("fighters").as_array()[1].at("items").as_array()[0].to_number<int>()==0,"using an ability consumes the held item");
+    game.receive(2,R"({"type":"input","seq":10001,"axes":[0,0,0,0,0,0],"power":0})");
+    for(int i=0;i<6;i++)game.tick();
+    require(messages[1].back().at("pilots").as_array()[1].at("state").as_array()[3].to_number<double>()> -7,"an empty slot cannot activate another kick");
+    std::cout<<"PASS first-to-three rounds, rematches and consumed server-owned abilities\n";
 }
