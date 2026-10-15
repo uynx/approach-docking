@@ -80,6 +80,18 @@ test('a collision between capsules crushes both craft without denting the statio
   for(const [mesh,before] of surfaces)assert.deepEqual(mesh.geometry.attributes.position.array,before,'the uninvolved station keeps its geometry');
 });
 
+test('a combat ship keeps impact deformation after its controls become active again',()=>{
+  const world=new THREE.Scene(),own=spacecraftModel(0),other=spacecraftModel(1);
+  const station={group:new THREE.Group(),fragments:[],offset:new THREE.Vector3(),velocity:new THREE.Vector3(),deform(){}};
+  own.velocity=new THREE.Vector3();world.add(own.group,other.group,station.group);
+  const effects=createDamageEffects(world,station,[own,other]),state=new Array(36).fill(0);
+  Object.assign(state,{6:1,15:0,17:-1,20:30,24:0.5,28:2000,29:20000,30:0.5,31:1,32:-1,35:1});
+  effects.update([state,null],new Array(54).fill(0),0);
+  assert.ok(own.body?.capsuleCrush>0.3,'an impact leaves damage while flight controls remain available');
+  const body=own.body;state[15]=2;effects.update([state,null],new Array(54).fill(0),0);
+  assert.equal(own.body,body,'changing flight status does not replay the same impact');
+});
+
 test('a fuel rupture tears frame sections and produces a short expanding flash in vacuum',()=>{
   const world=new THREE.Scene(),own=spacecraftModel(0x6daaa7),other=spacecraftModel(0xc6a06c);
   const station={group:new THREE.Group(),fragments:[],offset:new THREE.Vector3(),velocity:new THREE.Vector3(),deform(){}};

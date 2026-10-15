@@ -65,8 +65,8 @@ export function createDamageEffects(scene,station,[own,other]) {
     detach(ship,ship.tornParts(true),ship.body.deformationEnergy*0.015,ship.velocity);
   }
   function damage(ship,state,dt) {
-    const key=`${state[Flight.impactSequence]}:${state[Flight.status]}`;
-    if(state[Flight.status]===2&&state[Flight.impactAge]>0&&key!==ship.crashKey&&Math.hypot(...state.slice(17,20))>0.5) {
+    const key=String(state[Flight.impactSequence]);
+    if(state[Flight.impactSequence]>0&&state[Flight.impactAge]>0&&key!==ship.crashKey&&Math.hypot(...state.slice(17,20))>0.5) {
       if(ship.body) {ship.body.time=Infinity;ship.deform(ship.body,ship.burst);fracture(ship);ship.dent.crush=ship.body.stationCrush;ship.commitDamage();}
       const damageSpeed=state[Flight.impactPart]>=0?Math.min(state[Flight.impactSpeed],Math.sqrt(700/Math.max(1,state[Flight.impactMass]))):state[Flight.impactSpeed];
       const stationImpact=(state[Flight.impactBody]||0)===0;
