@@ -23,6 +23,8 @@ private:
         bool ready=false;
         long sequence=-1;
         unsigned long last_input=0;
+        bool fire=false;
+        int power=-1;
     };
     struct Room {
         std::array<Pilot,2> pilots;

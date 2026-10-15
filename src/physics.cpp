@@ -211,20 +211,21 @@ void advance(State& s, const Controls& controls, double dt, bool orbit) {
         const double magnitude = value < 0 ? -value : value;
         if (magnitude <= phase || s.fuel <= 0) continue;
         const double sign = value < 0 ? -1 : 1;
+        const double left=clamp(controls.efficiency[2*i],0,1),right=clamp(controls.efficiency[2*i+1],0,1);
         if (i < 3) {
-            const Vec f = scale(axes[i],880*sign);
-            force = add(force,scale(f,2));
-            torque = add(torque,add(cross(arms[i],f),cross(scale(arms[i],-1),f)));
+            const Vec f = scale(axes[i],880*sign*controls.translation);
+            force = add(force,scale(f,left+right));
+            torque = add(torque,scale(cross(arms[i],f),left-right));
         } else {
             const int axis=i-3;
             const Vec direction=axis==0 ? Vec{0,0,1} : arms[axis];
             const Vec arm=scale(direction,1.5);
-            const Vec f=scale(cross(axes[axis],direction),55*sign);
-            torque=add(torque,scale(cross(arm,f),2));
+            const Vec f=scale(cross(axes[axis],direction),55*sign*controls.rotation);
+            torque=add(torque,scale(cross(arm,f),left+right));
         }
-        total_thrust += i < 3 ? 1760 : 110;
+        total_thrust += (i < 3 ? 880*controls.translation : 55*controls.rotation)*(left+right);
     }
-    const double wanted = total_thrust/(220*9.80665);
+    const double wanted = total_thrust/(controls.specific_impulse*9.80665);
     const double fuel_rate = wanted > s.fuel/dt ? s.fuel/dt : wanted;
     const double fraction = wanted > 0 ? fuel_rate/wanted : 0;
     force=scale(force,fraction); torque=scale(torque,fraction);

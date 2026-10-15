@@ -23,7 +23,11 @@ struct Station {
     Vec position, velocity, omega; Quat attitude; int broken_panels = 0, ruptured_tanks = 0;
     Satellite satellites[3]={initial_satellite(0),initial_satellite(1),initial_satellite(2)};
 };
-struct Controls { double axis[6] = {}; };
+struct Controls {
+    double axis[6] = {};
+    double efficiency[12]={1,1,1,1,1,1,1,1,1,1,1,1};
+    double translation=1, rotation=1, specific_impulse=220;
+};
 constexpr double step_seconds = 1.0 / 120.0;
 constexpr double orbit_radius = 6771000;
 constexpr double earth_mu = 3.986004418e14;

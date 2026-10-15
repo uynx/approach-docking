@@ -43,9 +43,14 @@ void Game::broadcast(const std::string& code,const Room& room) {
         {"tick",tick_},{"countdown",room.start>tick_ ? (room.start-tick_)/120.0 : 0},
         {"pilots",pilots},{"station",station}};
     message["mode"]=room.combat?"combat":"docking";
-    if(room.combat)message["combat"]=json::object{{"map",room.battle.map?"scrapyard":"shipyard"},
+    if(room.combat) {
+        json::array fighters;
+        for(const auto& fighter:room.battle.fighters)fighters.push_back(json::object{{"steering",combat::steering(fighter)},
+            {"propulsion",combat::propulsion(fighter)},{"shield",fighter.shield},{"shots",fighter.shot_sequence}});
+        message["combat"]=json::object{{"map",room.battle.map?"scrapyard":"shipyard"},
         {"health",json::array{room.battle.fighters[0].health,room.battle.fighters[1].health}},
-        {"round",room.battle.number},{"wins",json::array{room.battle.wins[0],room.battle.wins[1]}}};
+        {"fighters",fighters},{"round",room.battle.number},{"wins",json::array{room.battle.wins[0],room.battle.wins[1]}}};
+    }
     for(const auto& p:room.pilots) if(p.peer>=0) send_(p.peer,message);
 }
 void Game::receive(int peer,const std::string& text) {
@@ -131,6 +136,10 @@ void Game::receive(int peer,const std::string& text) {
             error(peer,"Invalid or repeated control sequence."); return;
         }
         flight::Controls controls;
+        const auto fire=obj.if_contains("fire"),power=obj.if_contains("power");
+        if((fire&&!fire->is_bool())||(power&&(!power->is_int64()||power->as_int64()<0||power->as_int64()>1))) {
+            error(peer,"Invalid weapon controls.");return;
+        }
         for(int i=0;i<6;++i) {
             const auto& axis=axes->as_array()[i];
             if(!axis.is_number()) {error(peer,"Invalid thrust.");return;}
@@ -139,6 +148,7 @@ void Game::receive(int peer,const std::string& text) {
             controls.axis[i]=v;
         }
         p->sequence=sequence->as_int64(); p->controls=controls; p->last_input=tick_;
+        p->fire=fire&&fire->as_bool();p->power=power?static_cast<int>(power->as_int64()):-1;
         return;
     }
     error(peer,"Unknown command.");
@@ -148,7 +158,7 @@ void Game::disconnect(int peer) {
     if(joined==joined_.end()) return;
     const auto code=joined->second;
     auto& room=rooms_.at(code);
-    for(auto& p:room.pilots) if(p.peer==peer) {p.peer=-1;p.controls={};p.ready=false;}
+    for(auto& p:room.pilots) if(p.peer==peer) {p.peer=-1;p.controls={};p.ready=false;p.fire=false;p.power=-1;}
     if(room.phase=="countdown") {
         room.phase="lobby";
         for(auto& p:room.pilots) p.ready=false;
@@ -169,14 +179,20 @@ void Game::tick() {
             flight::State states[]={room.pilots[0].state,room.pilots[1].state};
             flight::Controls controls[2];
             for(auto& p:room.pilots) {
-                if(tick_-p.last_input>60) p.controls={};
+                if(tick_-p.last_input>60) {p.controls={};p.fire=false;p.power=-1;}
                 controls[&p-room.pilots.data()]=p.controls;
             }
-            flight::advance_system(states,controls,2,room.station,flight::step_seconds);
+            if(room.combat) {
+                combat::Command commands[2];
+                for(int i=0;i<2;i++) {auto& p=room.pilots[i];commands[i]={p.controls,p.fire,p.power};p.power=-1;}
+                combat::advance(room.battle,states,commands,room.station);
+            } else flight::advance_system(states,controls,2,room.station,flight::step_seconds);
             for(int i=0;i<2;++i) {
-                flight::judge(states[i],i,room.station);room.pilots[i].state=states[i];
+                if(!room.combat)flight::judge(states[i],i,room.station);
+                room.pilots[i].state=states[i];
             }
-            if(room.pilots[0].state.status && room.pilots[1].state.status) {
+            if(room.combat&&room.battle.result!=-2)room.phase="finished";
+            if(!room.combat&&room.pilots[0].state.status && room.pilots[1].state.status) {
                 room.phase="finished";
                 for(auto& p:room.pilots) {p.ready=false;p.controls={};}
             }
