@@ -148,9 +148,11 @@ function startLesson(index=0) {
   demo={index,paused:false,clock:0,finishedAt:null};
   const lesson=tutorialLessons[index];
   for(const [field,value] of Object.entries(lesson.pose))sim.restore(Number(field),value);
+  if(lesson.opponent){sim.set_opponent(1);for(const [field,value] of Object.entries(lesson.opponent))sim.restore_opponent(Number(field),value);}
   $('tutorial').hidden=false;$('mode').textContent='WATCHING TUTORIAL';
   $('tutorial-step').textContent=`FLIGHT SCHOOL · ${index+1} / ${tutorialLessons.length}`;
   $('tutorial-title').textContent=lesson.title;$('tutorial-tip').textContent=lesson.tip;
+  $('tutorial-scene').value=String(index);
   $('tutorial-pause').textContent='Pause';$('tutorial-pause').setAttribute('aria-label','Pause tutorial');
   $('tutorial-next').textContent='Next example';
 }
@@ -186,6 +188,11 @@ $('copy-link').onclick = async () => {
 $('camera').onclick = toggleCamera;
 $('center-view').onclick = resetCamera;
 $('watch-tutorial').onclick=()=>{$('manual').close();startLesson();};
+$('crash-lab').onclick=()=>startLesson(4);
+for(const [index,lesson] of tutorialLessons.entries()) {
+  const option=document.createElement('option');option.value=String(index);option.textContent=lesson.title;$('tutorial-scene').append(option);
+}
+$('tutorial-scene').onchange=()=>startLesson(Number($('tutorial-scene').value));
 $('tutorial-next').onclick=()=>startLesson((demo.index+1)%tutorialLessons.length);
 $('tutorial-exit').onclick=()=>startPractice(false);
 $('tutorial-pause').onclick=()=>{
@@ -300,7 +307,7 @@ function frame(now) {
     }
   }
   if(!$('score-award').hidden){const progress=Math.min(1,Math.max(0,(now-awardStarted)/1200));$('award-value').textContent=String(Math.round(awardScore*(1-(1-progress)**3)));}
-  const opponent=practice||!snapshot?.pilots[1-slot]?.name?null:display.opponent;
+  const opponent=demo&&tutorialLessons[demo.index].opponent?display.opponent:practice||!snapshot?.pilots[1-slot]?.name?null:display.opponent;
   scene.render(state,opponent,slot,active,axes,demo?demo.clock:now,display.station,thermal);
   requestAnimationFrame(frame);
 }
@@ -319,8 +326,9 @@ try {
   const saved=sessionStorage.getItem('approach-session');
   connect();
   await scene.ready;
-  $('practice').disabled = false; $('entry').disabled = false;
-  if(!active&&!$('join-code').value&&!saved)startPractice(false);
+  $('practice').disabled = false; $('entry').disabled = false;$('crash-lab').disabled=false;
+  if(!active&&new URLSearchParams(location.search).has('lab'))startLesson(4);
+  else if(!active&&!$('join-code').value&&!saved)startPractice(false);
   else if($('join-code').value){$('welcome').hidden=false;$('multiplayer').setAttribute('aria-expanded','true');}
   requestAnimationFrame(frame);
   setInterval(() => {

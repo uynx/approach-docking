@@ -60,3 +60,22 @@ test('the tutorial pilot handles varied launch attitudes',async()=>{
     assert.ok(sim.component(16)>850);
   }
 });
+
+test('the crash lab includes real sideways, tail, glancing, tank and two-ship impacts',async()=>{
+  for(const id of ['side-slow','side-fast','tail','glancing','tank','station-tank','head-on','tumble']) {
+    const lesson=tutorialLessons.find(lesson=>lesson.id===id);
+    assert.ok(lesson,`the lab offers ${id}`);
+    const sim=await flight();
+    for(const [field,value] of Object.entries(lesson.pose))sim.restore(Number(field),value);
+    if(lesson.opponent){sim.set_opponent(1);for(const [field,value] of Object.entries(lesson.opponent))sim.restore_opponent(Number(field),value);}
+    let collided=false,ruptured=false;
+    for(let tick=0;tick<1200;tick++) {
+      sim.step_flight(0,0,0,0,0,0,0);sim.judge_flight(0);
+      if(sim.component(31)>0)collided=true;
+      if(sim.station_component(14)>0||sim.component(33)>0)ruptured=true;
+    }
+    assert.ok(collided,`${id} contacts real collision geometry`);
+    if(id==='head-on')assert.ok(sim.opponent_component(31)>0,'both spacecraft receive impact metadata');
+    if(id==='tank'||id==='station-tank')assert.ok(ruptured,'the tank scenario ruptures actual propellant hardware');
+  }
+});
