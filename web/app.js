@@ -230,7 +230,7 @@ $('help-button').onclick = () => { held.clear(); $('manual').showModal(); };
 $('close-manual').onclick = () => $('manual').close();
 const keys = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Comma', 'Period', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'];
 addEventListener('keydown', event => {
-  if (event.target instanceof HTMLInputElement) return;
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
   if (active && keys.includes(event.code)) { event.preventDefault(); held.add(event.code); }
   if (!event.repeat && event.code === 'KeyC' && active) toggleCamera();
   if (!event.repeat && event.code === 'KeyV' && active && !$('manual').open) resetCamera();

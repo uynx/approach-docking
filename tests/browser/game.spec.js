@@ -450,6 +450,9 @@ test('flight menus expose crash scenes and omit atmospheric entry practice',asyn
   await expect(page.getByRole('button',{name:'Entry',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Crash lab',exact:true}).click();
   await expect(page.locator('#tutorial-title')).toHaveText('Side impact · 3 m/s');
+  await page.getByLabel('Graphics quality').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByLabel('Graphics quality')).toHaveValue('performance');
   await page.setViewportSize({width:1600,height:900});
   await page.getByLabel('Graphics quality').selectOption('performance');
   expect(await page.locator('#viewport').evaluate(canvas=>canvas.width*canvas.height)).toBeLessThanOrEqual(960*540);
