@@ -5,7 +5,7 @@ const url=process.env.APP_URL||'http://127.0.0.1:8080';
 const arena=process.env.ARENA==='1',pageUrl=new URL(arena?'/arena':'/',url).href,practiceButton=arena?'Recovery training':'Practice flight';
 const hardware=process.env.GPU_BACKEND==='hardware';
 const viewport={width:Number(process.env.WIDTH||1280),height:Number(process.env.HEIGHT||720)};
-const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/etc/profiles/per-user/uynx/bin/chromium',args:hardware?['--use-gl=angle','--use-angle=gl']:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH,args:hardware?['--use-gl=angle','--use-angle=gl']:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 try {
   const page=await browser.newPage({viewport});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
