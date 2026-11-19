@@ -10,7 +10,7 @@ Mouse movement aims the weapon independently of the ship, and left click or Spac
 
 Lasers deal 25 hull damage with a quarter-second cooldown and a 240 m range, and station hardware and intact ship surfaces block shots. Hull hits detach sections and remove their colliders, and damage weakens individual thruster pairs, so a damaged ship accelerates and turns differently than a healthy one. Destroyed ships break apart.
 
-There are two power slots, used with 1 and 2 or the HUD buttons, and pickups refill empty slots and add propellant. The powers are Spin bug, Tow cable, Emergency kick, Decoy, Scrap armor and Recovery override, which can disrupt rotation, pull both craft, add a thrust impulse, display a false ship, absorb damage or damp rotation. The in-game rules explain when and how to use each one.
+There are two power slots, used with 1 and 2 or the HUD buttons, and pickups refill empty slots and add propellant. The powers are Spin bug, Tow cable, Emergency kick, Decoy capsule, Scrap armor and Recovery override, which can disrupt rotation, pull both craft, add a thrust impulse, display a false ship, absorb damage or damp rotation. The in-game rules explain when and how to use each one.
 
 The native server owns hits, cooldowns, damage, inventory, pickup proximity and round scores, and clients only submit bounded flight axes, unit aim directions and action requests. Generated callsigns are public labels, and persistent identity and Elo aren't implemented.
 
